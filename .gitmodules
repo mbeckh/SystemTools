@@ -1,0 +1,5 @@
+[submodule "msvc-common"]
+	path = msvc-common
+	url = https://github.com/mbeckh/msvc-common.git
+	update = rebase
+	branch = master
