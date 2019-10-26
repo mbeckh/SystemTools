@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{60A403E8-25D2-4619-9093-EF6F2489713E}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>systools::benchmark</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <Import Project="$(SolutionDir)msvc-common\ProjectConfiguration.props" />
+  <Import Project="$(SolutionDir)msvc\ProjectConfiguration.props" Condition="exists('$(SolutionDir)msvc\ProjectConfiguration.props')" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(SolutionDir)msvc-common\BuildConfiguration.props" />
+    <Import Project="$(SolutionDir)msvc-common\fmt.props" />
+    <Import Project="$(SolutionDir)msvc-common\args.props" />
+    <Import Project="$(SolutionDir)lib\llamalog\msvc\llamalog.props" />
+    <Import Project="$(SolutionDir)lib\common-cpp\m3c\msvc\m3c.props" />
+	<!--
+    <Import Project="..\..\..\SystemTools\msvc\SystemTools.props" />
+	-->
+    <Import Project="$(SolutionDir)msvc\BuildConfiguration.props" Condition="exists('$(SolutionDir)msvc\BuildConfiguration.props')" />
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">LLAMALOG_LEVEL_TRACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	  <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">LLAMALOG_LEVEL_INFO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\src\FileCopyBenchmark.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

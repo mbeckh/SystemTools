@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{12793101-18F9-4E2E-BEE9-9FBB1C4209DF}</ProjectGuid>
+    <RootNamespace>systools</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <Import Project="$(SolutionDir)msvc-common\ProjectConfiguration.props" />
+  <Import Project="$(SolutionDir)msvc\ProjectConfiguration.props" Condition="exists('$(SolutionDir)msvc\ProjectConfiguration.props')" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(SolutionDir)msvc-common\BuildConfiguration.props" />
+    <Import Project="$(SolutionDir)msvc-common\fmt.props" />
+    <Import Project="$(SolutionDir)lib\llamalog\msvc\llamalog.props" />
+    <Import Project="$(SolutionDir)lib\common-cpp\m3c\msvc\m3c.props" />
+    <Import Project="..\SystemTools.props" />
+    <Import Project="$(SolutionDir)msvc\BuildConfiguration.props" Condition="exists('$(SolutionDir)msvc\BuildConfiguration.props')" />
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup>
+    <ClCompile Condition="'$(Configuration)'=='Debug'">
+      <PreprocessorDefinitions>LLAMALOG_LEVEL_TRACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Condition="'$(Configuration)'=='Release'">
+      <PreprocessorDefinitions>LLAMALOG_LEVEL_INFO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\src\DirectoryScanner.cpp" />
+    <ClCompile Include="..\..\src\Backup.cpp" />
+    <ClCompile Include="..\..\src\FileComparer.cpp" />
+    <ClCompile Include="..\..\src\Path.cpp" />
+    <ClCompile Include="..\..\src\Volume.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\include\systools\Backup.h" />
+    <ClInclude Include="..\..\include\systools\DirectoryScanner.h" />
+    <ClInclude Include="..\..\include\systools\FileComparer.h" />
+    <ClInclude Include="..\..\include\systools\Path.h" />
+    <ClInclude Include="..\..\include\systools\ThreadPool.h" />
+    <ClInclude Include="..\..\include\systools\ThreeWayMerge.h" />
+    <ClInclude Include="..\..\include\systools\Volume.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

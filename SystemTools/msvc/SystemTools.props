@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <SystemToolsDirectory>$(MSBuildThisFileDirectory)..\</SystemToolsDirectory>
+    <IncludePath Condition="'$(ProjectGuid)'!='{12793101-18F9-4E2E-BEE9-9FBB1C4209DF}'">$(SystemToolsDirectory)include;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories Condition="'$(ProjectGuid)'=='{12793101-18F9-4E2E-BEE9-9FBB1C4209DF}'">$(SystemToolsDirectory)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>pathcch.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(ProjectGuid)'!='{12793101-18F9-4E2E-BEE9-9FBB1C4209DF}'">$(MSBuildThisFileName)_$(PlatformShortName)$(DebugSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup Condition="'$(ProjectGuid)' != '{12793101-18F9-4E2E-BEE9-9FBB1C4209DF}'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)SystemTools\SystemTools.vcxproj">
+      <Project>{12793101-18F9-4E2E-BEE9-9FBB1C4209DF}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemGroup>
+</Project>
