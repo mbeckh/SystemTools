@@ -1637,7 +1637,7 @@ TEST_P(Path_DeleteTest, ForceDelete_ErrorBuildingHardlinkPathForSecondName_Throw
 	EXPECT_CALL(check, Call(true));
 	EXPECT_CALL(m_win32, SetFileAttributesW(t::StrEq(kTempPath.c_str()), t::_))
 		.RetiresOnSaturation();
-	EXPECT_CALL(m_win32, SetFileAttributesW(t::AnyOf(t::StrCaseEq(kTempPath.c_str()), t::StrCaseEq(kHardlinkPath.c_str())), t::_))
+	EXPECT_CALL(m_win32, SetFileAttributesW(t::EndsWith(L".test"), t::_))
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_ACCESS_DENIED, FALSE));
 	EXPECT_CALL(m_win32, PathCchCombineEx(t::_, t::_, t::StrEq(kTempPath.c_str()), t::_, t::_))
 		.WillOnce(t::Return(HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)));
@@ -1672,10 +1672,8 @@ TEST_P(Path_DeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttribute_Retu
 	EXPECT_CALL(check, Call(true));
 	EXPECT_CALL(m_win32, SetFileAttributesW(t::StrEq(kTempPath.c_str()), t::_))
 		.RetiresOnSaturation();
-	EXPECT_CALL(m_win32, SetFileAttributesW(t::AnyOf(t::StrCaseEq(kTempPath.c_str()), t::StrCaseEq(kHardlinkPath.c_str())), t::_))
+	EXPECT_CALL(m_win32, SetFileAttributesW(t::EndsWith(L".test"), t::_))
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, FALSE))
-		.RetiresOnSaturation();
-	EXPECT_CALL(m_win32, SetFileAttributesW(t::AnyOf(t::StrCaseEq(kTempPath.c_str()), t::StrCaseEq(kHardlinkPath.c_str())), t::_))
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, FALSE));
 	EXPECT_CALL(check, Call(false));
 
