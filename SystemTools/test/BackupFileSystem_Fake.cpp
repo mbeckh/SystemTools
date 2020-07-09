@@ -194,6 +194,7 @@ bool BackupFileSystem_Fake::IsDirectory(const Path& path) const {
 
 	const Entry& entry = m_files.at(Path(str.substr(0, pos)));
 	const std::wstring_view streamName = str.substr(pos);
+
 	for (const Entry::Stream& stream : entry.streams) {
 		if (stream.name == streamName) {
 			return stream.content;

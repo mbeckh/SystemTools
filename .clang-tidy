@@ -39,7 +39,7 @@ ExtraArgsBefore: [
   '-WCL4', '-Wpedantic', '-Wthread-safety', '-Wmicrosoft', '-Wdocumentation', '-Wdocumentation-pedantic', '-Wtautological-compare',
   '-fms-extensions', '-fms-compatibility', '-D_CRT_USE_BUILTIN_OFFSETOF',
   '-fno-delayed-template-parsing', '-fcomment-block-commands=internal,hideinitializer',
-  '-ISystemTools/include', '-Ilib/fmt/include', '-Ilib/llamalog/include', '-Ilib/common-cpp/m3c/include'
+  '-ISystemTools/include', '-Ilib/fmt/include', '-Ilib/llamalog/include', '-Ilib/common-cpp/m3c/include',
   '-DUNICODE', '-D_UNICODE', '-DNOMINMAX', '-DWIN32_LEAN_AND_MEAN'
   ]
 CheckOptions:
