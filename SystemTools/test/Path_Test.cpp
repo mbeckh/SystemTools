@@ -1635,9 +1635,8 @@ TEST_P(Path_DeleteTest, ForceDelete_ErrorBuildingHardlinkPathForSecondName_Throw
 	t::InSequence s;
 	t::MockFunction<void(bool)> check;
 	EXPECT_CALL(check, Call(true));
-	EXPECT_CALL(m_win32, SetFileAttributesW(t::StrEq(kTempPath.c_str()), t::_))
-		.RetiresOnSaturation();
 	EXPECT_CALL(m_win32, SetFileAttributesW(t::AnyOf(t::StrEq(kTempPath.c_str()), t::StrEq(kHardlinkPath.c_str())), t::_))
+		.WillOnce(t::DoDefault())  // call for kTempPath
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_ACCESS_DENIED, FALSE));
 	EXPECT_CALL(m_win32, PathCchCombineEx(t::_, t::_, t::StrEq(kTempPath.c_str()), t::_, t::_))
 		.WillOnce(t::Return(HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)));
@@ -1659,7 +1658,7 @@ TEST_P(Path_DeleteTest, ForceDelete_ErrorBuildingHardlinkPathForSecondName_Throw
 	}
 }
 
-TEST_P(Path_DeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForSecondName_Return) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttribute_Return) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
 		SUCCEED();
 		return;
@@ -1670,9 +1669,9 @@ TEST_P(Path_DeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForSe
 	t::InSequence s;
 	t::MockFunction<void(bool)> check;
 	EXPECT_CALL(check, Call(true));
-	EXPECT_CALL(m_win32, SetFileAttributesW(t::StrEq(kTempPath.c_str()), t::_))
-		.RetiresOnSaturation();
-	EXPECT_CALL(m_win32, SetFileAttributesW(t::AnyOf(t::StrEq(kHardlinkPath.c_str()), t::StrEq(kHardlinkPath.c_str())), t::_))
+	EXPECT_CALL(m_win32, SetFileAttributesW(t::AnyOf(t::StrEq(kTempPath.c_str()), t::StrEq(kHardlinkPath.c_str())), t::_))
+		.WillOnce(t::DoDefault())  // call for kTempPath
+		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, FALSE))
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, FALSE));
 	EXPECT_CALL(check, Call(false));
 
@@ -1714,40 +1713,6 @@ TEST_P(Path_DeleteTest, ForceDelete_ErrorBuildingHardlinkPathForFirstName_ThrowE
 
 	check.Call(true);
 	EXPECT_THROW(kTempPath.ForceDelete(), m3c::com_exception);
-	check.Call(false);
-	EXPECT_FALSE(kTempPath.Exists());
-
-	if (std::get<0>(GetParam()) == Mode::kHardlink) {
-		EXPECT_TRUE(kHardlinkPath.Exists());
-		EXPECT_EQ(static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam()) & ~Attributes::kNormal & ~Attributes::kReadOnly), GetFileAttributesW(kHardlinkPath.c_str()) & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM));
-	}
-}
-
-TEST_P(Path_DeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForFirstName_Return) {
-	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
-		SUCCEED();
-		return;
-	}
-
-	m_requireReadOnly = false;
-
-	t::InSequence s;
-	t::MockFunction<void(bool)> check;
-	EXPECT_CALL(check, Call(true));
-	EXPECT_CALL(m_win32, SetFileAttributesW(t::StrEq(kTempPath.c_str()), t::_))
-		.RetiresOnSaturation();
-	EXPECT_CALL(m_win32, SetFileAttributesW(t::AnyOf(t::StrEq(kTempPath.c_str()), t::StrEq(kHardlinkPath.c_str())), t::_))
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, FALSE))
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, FALSE));
-	EXPECT_CALL(check, Call(false));
-
-	ASSERT_TRUE(kTempPath.Exists());
-	if (std::get<0>(GetParam()) == Mode::kHardlink) {
-		ASSERT_TRUE(kHardlinkPath.Exists());
-	}
-
-	check.Call(true);
-	EXPECT_THROW(kTempPath.ForceDelete(), m3c::windows_exception);
 	check.Call(false);
 	EXPECT_FALSE(kTempPath.Exists());
 
