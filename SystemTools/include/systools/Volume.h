@@ -3,6 +3,10 @@
 
 #include <m3c/lazy_string.h>
 
+#ifndef SYSTOOLS_NO_INLINE
+#define SYSTOOLS_NO_INLINE
+#endif
+
 namespace systools {
 
 class Path;
@@ -18,8 +22,8 @@ public:
 	const string_type& GetName() const noexcept {
 		return m_name;
 	}
-	std::uint32_t GetUnbufferedFileOffsetAlignment();
-	std::align_val_t GetUnbufferedMemoryAlignment();
+	SYSTOOLS_NO_INLINE std::uint32_t GetUnbufferedFileOffsetAlignment();
+	SYSTOOLS_NO_INLINE std::align_val_t GetUnbufferedMemoryAlignment();
 
 private:
 	void ReadUnbufferedAlignments();
