@@ -33,7 +33,7 @@ namespace t = testing;
 namespace {
 
 #pragma warning(suppress : 4100)
-MATCHER_P2(PathWithExtactFilename, path, filename, "") {
+MATCHER_P2(PathWithExactFilename, path, filename, "") {
 	static_assert(std::is_convertible_v<arg_type, const Path&>);
 	static_assert(std::is_convertible_v<path_type, const Path&>);
 	static_assert(std::is_convertible_v<filename_type, const std::wstring&>);
@@ -428,12 +428,12 @@ FileBuilder& FileBuilder::build() {
 
 		// Create directories missing in dst
 		if (m_inSrc && !m_inDst) {
-			EXPECT_CALL(m_backupFixture.m_strategy, CreateDirectory(PathWithExtactFilename(myDstPath.GetParent(), m_srcEntry.filename), mySrcPath, t::_)).RetiresOnSaturation();
+			EXPECT_CALL(m_backupFixture.m_strategy, CreateDirectory(PathWithExactFilename(myDstPath.GetParent(), m_srcEntry.filename), mySrcPath, t::_)).RetiresOnSaturation();
 		}
 
 		// rename if src and dst only differ by case
 		if (m_inSrc && m_inDst && m_srcEntry.filename != m_dstEntry.filename) {
-			EXPECT_CALL(m_backupFixture.m_strategy, Rename(myDstPath, PathWithExtactFilename(myDstPath.GetParent(), m_srcEntry.filename))).RetiresOnSaturation();
+			EXPECT_CALL(m_backupFixture.m_strategy, Rename(myDstPath, PathWithExactFilename(myDstPath.GetParent(), m_srcEntry.filename))).RetiresOnSaturation();
 		}
 
 		// set attributes for all directories in dst that exist in src
@@ -463,7 +463,7 @@ FileBuilder& FileBuilder::build() {
 
 		// rename files that are identical but use different case
 		if (m_inSrc && m_inDst && srcDstIdentical && m_srcEntry.filename != m_dstEntry.filename) {
-			EXPECT_CALL(m_backupFixture.m_strategy, Rename(myDstPath, PathWithExtactFilename(myDstPath.GetParent(), m_srcEntry.filename))).RetiresOnSaturation();
+			EXPECT_CALL(m_backupFixture.m_strategy, Rename(myDstPath, PathWithExactFilename(myDstPath.GetParent(), m_srcEntry.filename))).RetiresOnSaturation();
 		}
 
 		// delete files from dst which exist in src but are not identical
@@ -484,11 +484,11 @@ FileBuilder& FileBuilder::build() {
 
 		// create hard link if found in ref but not in dst
 		if (m_inSrc && m_inRef && srcRefIdentical && !srcDstIdentical) {
-			EXPECT_CALL(m_backupFixture.m_strategy, CreateHardLink(PathWithExtactFilename(myDstPath.GetParent(), m_srcEntry.filename), myRefPath)).RetiresOnSaturation();
+			EXPECT_CALL(m_backupFixture.m_strategy, CreateHardLink(PathWithExactFilename(myDstPath.GetParent(), m_srcEntry.filename), myRefPath)).RetiresOnSaturation();
 		}
 
 		if (m_inSrc && !srcRefIdentical && !srcDstIdentical) {
-			EXPECT_CALL(m_backupFixture.m_strategy, Copy(mySrcPath, PathWithExtactFilename(myDstPath.GetParent(), m_srcEntry.filename))).RetiresOnSaturation();
+			EXPECT_CALL(m_backupFixture.m_strategy, Copy(mySrcPath, PathWithExactFilename(myDstPath.GetParent(), m_srcEntry.filename))).RetiresOnSaturation();
 			EXPECT_CALL(m_backupFixture.m_strategy, SetAttributes(myDstPath, t::AllOf(
 																				 t::Property(&ScannedFile::GetCreationTime, m_srcEntry.creationTime),
 																				 t::Property(&ScannedFile::GetLastWriteTime, m_srcEntry.lastWriteTime),
