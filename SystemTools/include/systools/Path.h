@@ -7,6 +7,10 @@
 #include <compare>
 #include <string>
 
+#ifndef SYSTOOLS_NO_INLINE
+#define SYSTOOLS_NO_INLINE
+#endif
+
 namespace llamalog {
 class LogLine;
 }
@@ -236,8 +240,8 @@ public:
 		return m_path.size();
 	}
 
-	[[nodiscard]] bool Exists() const;
-	[[nodiscard]] bool IsDirectory() const;
+	[[nodiscard]] SYSTOOLS_NO_INLINE bool Exists() const;
+	[[nodiscard]] SYSTOOLS_NO_INLINE bool IsDirectory() const;
 	[[nodiscard]] Path GetParent() const;
 	[[nodiscard]] Filename GetFilename() const;
 

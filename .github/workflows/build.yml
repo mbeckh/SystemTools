@@ -24,6 +24,7 @@ jobs:
       uses: mbeckh/msvc-common/actions/build@v2
       with:
         projects: SystemTools, SystemTools_Test
+        extra-compiler-args: -DSYSTOOLS_NO_INLINE=__declspec(noinline)
         configuration: ${{ matrix.configuration }}
 
     - name: Run tests
