@@ -2,8 +2,8 @@
 
 #include "TestUtils.h"
 
-#include <m3c/Handle.h>
 #include <m3c/exception.h>
+#include <m3c/handle.h>
 
 #include <detours_gmock.h>
 #include <pathcch.h>
@@ -51,6 +51,10 @@ namespace dtgm = detours_gmock;
 		(PWSTR pszPath, size_t cchPath, PCWSTR pszMore, ULONG dwFlags),                         \
 		(pszPath, cchPath, pszMore, dwFlags),                                                   \
 		nullptr);                                                                               \
+	fn_(4, HRESULT, APIENTRY, PathCchCanonicalizeEx,                                            \
+		(PWSTR pszPathOut, size_t cchPathOut, PCWSTR pszPathIn, ULONG dwFlags),                 \
+		(pszPathOut, cchPathOut, pszPathIn, dwFlags),                                           \
+		nullptr);                                                                               \
 	fn_(4, HRESULT, APIENTRY, PathCchRemoveBackslashEx,                                         \
 		(PWSTR pszPath, size_t cchPath, PWSTR * ppszEnd, size_t * pcchRemaining),               \
 		(pszPath, cchPath, ppszEnd, pcchRemaining),                                             \
@@ -71,31 +75,31 @@ namespace dtgm = detours_gmock;
 DTGM_DECLARE_API_MOCK(Win32, WIN32_FUNCTIONS);
 
 
-class FilenameTest : public t::Test {
+class Filename_Test : public t::Test {
 protected:
-	~FilenameTest() noexcept {
+	void TearDown() override {
 		t::Mock::VerifyAndClearExpectations(&m_win32);
 		DTGM_DETACH_API_MOCK(Win32);
 	}
 
 protected:
-	DTGM_DEFINE_API_MOCK(Win32, m_win32);
+	DTGM_DEFINE_NICE_API_MOCK(Win32, m_win32);
 };
 
-class PathTest : public t::Test {
+class Path_Test : public t::Test {
 protected:
-	~PathTest() noexcept {
+	void TearDown() override {
 		t::Mock::VerifyAndClearExpectations(&m_win32);
 		DTGM_DETACH_API_MOCK(Win32);
 	}
 
 protected:
-	DTGM_DEFINE_API_MOCK(Win32, m_win32);
+	DTGM_DEFINE_NICE_API_MOCK(Win32, m_win32);
 };
 
 namespace {
 
-const std::wstring kTestVolume = LR"(\\?\Volume{23220209-1205-1000-8000-0000000001})";
+const std::wstring kTestVolume = LR"(\\?\Volume{00112233-4455-6677-8899-AABBCCDDEEFF})";
 
 enum class Mode : std::uint_fast8_t { kDirectory,
 									  kFile,
@@ -194,17 +198,17 @@ void PrintTo(const Attributes attributes, _In_ std::ostream *const os) {
 		first = false;
 	}
 	if (attributes & Attributes::kReadOnly) {
-		!first && *os << "+";
+		!first &&*os << "+";
 		*os << "ReadOnly";
 		first = false;
 	}
 	if (attributes & Attributes::kHidden) {
-		!first && *os << "+";
+		!first &&*os << "+";
 		*os << "Hidden";
 		first = false;
 	}
 	if (attributes & Attributes::kSystem) {
-		!first && *os << "+";
+		!first &&*os << "+";
 		*os << "System";
 		first = false;
 	}
@@ -212,13 +216,31 @@ void PrintTo(const Attributes attributes, _In_ std::ostream *const os) {
 
 }  // namespace
 
-class PathDeleteTest : public t::Test
+class Path_DeleteTest : public t::Test
 	, public t::WithParamInterface<std::tuple<Mode, Attributes>> {
 protected:
-	PathDeleteTest() {
-		Initialize();
+	void SetUp() override {
+		if (std::get<0>(GetParam()) == Mode::kDirectory) {
+			ASSERT_TRUE(CreateDirectoryW(kTempPath.c_str(), nullptr));
+			ASSERT_TRUE(SetFileAttributesW(kTempPath.c_str(), static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam()))));
+		}
+		if (std::get<0>(GetParam()) == Mode::kFile || std::get<0>(GetParam()) == Mode::kHardlink) {
+			const m3c::handle hFile = CreateFileW(kTempPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam())), nullptr);
+			ASSERT_TRUE(hFile);
+		}
+
+		ASSERT_EQ(static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam()) & ~Attributes::kNormal), GetFileAttributesW(kTempPath.c_str()) & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM));
+		ASSERT_TRUE(kTempPath.Exists());
+
+		if (std::get<0>(GetParam()) == Mode::kHardlink) {
+			ASSERT_TRUE(CreateHardLinkW(kHardlinkPath.c_str(), kTempPath.c_str(), nullptr));
+
+			ASSERT_TRUE(kHardlinkPath.Exists());
+			ASSERT_EQ(static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam()) & ~Attributes::kNormal), GetFileAttributesW(kHardlinkPath.c_str()) & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM));
+		}
 	}
-	~PathDeleteTest() {
+
+	void TearDown() override {
 		t::Mock::VerifyAndClearExpectations(&m_win32);
 		DTGM_DETACH_API_MOCK(Win32);
 
@@ -260,31 +282,9 @@ protected:
 		}
 	}
 
-private:
-	void Initialize() {
-		if (std::get<0>(GetParam()) == Mode::kDirectory) {
-			ASSERT_TRUE(CreateDirectoryW(kTempPath.c_str(), nullptr));
-			ASSERT_TRUE(SetFileAttributesW(kTempPath.c_str(), static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam()))));
-		}
-		if (std::get<0>(GetParam()) == Mode::kFile || std::get<0>(GetParam()) == Mode::kHardlink) {
-			const m3c::Handle hFile = CreateFileW(kTempPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam())), nullptr);
-			ASSERT_TRUE(hFile);
-		}
-
-		ASSERT_EQ(static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam()) & ~Attributes::kNormal), GetFileAttributesW(kTempPath.c_str()) & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM));
-		ASSERT_TRUE(kTempPath.Exists());
-
-		if (std::get<0>(GetParam()) == Mode::kHardlink) {
-			ASSERT_TRUE(CreateHardLinkW(kHardlinkPath.c_str(), kTempPath.c_str(), nullptr));
-
-			ASSERT_TRUE(kHardlinkPath.Exists());
-			ASSERT_EQ(static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam()) & ~Attributes::kNormal), GetFileAttributesW(kHardlinkPath.c_str()) & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM));
-		}
-	}
-
 protected:
-	const Path kTempPath = TestUtils::GetTempDirectory() / L"23220209-1205-1000-8000-0000001001.0.test";
-	const Path kHardlinkPath = TestUtils::GetTempDirectory() / L"23220209-1205-1000-8000-0000001001.1.test";
+	const Path kTempPath = TestUtils::GetTempDirectory() / L"23220209-1205-1000-8000-000000001001.0.test";
+	const Path kHardlinkPath = TestUtils::GetTempDirectory() / L"23220209-1205-1000-8000-000000001001.1.test";
 
 protected:
 	bool m_requireReadOnly = true;
@@ -298,450 +298,568 @@ protected:
 // Filename
 //
 
-TEST_F(FilenameTest, ctor_FromString_MakeFilename) {
+TEST_F(Filename_Test, ctor_FromString_MakeFilename) {
 	const Filename filename(L"foo");
 
 	EXPECT_STREQ(L"foo", filename.c_str());
 }
 
-TEST_F(FilenameTest, ctor_FromCharacters_MakeFilename) {
+TEST_F(Filename_Test, ctor_FromCharacters_MakeFilename) {
 	const Filename filename(L"foo", 2);
 
 	EXPECT_STREQ(L"fo", filename.c_str());
 }
 
-TEST_F(FilenameTest, opEquals_IsSame_ReturnTrue) {
+TEST_F(Filename_Test, opCompare_IsSame_CompareEqual) {
 	const Filename filename(L"foo");
 
 	EXPECT_TRUE(filename == Filename(L"foo"));
 	EXPECT_FALSE(filename != Filename(L"foo"));
+	EXPECT_FALSE(filename < Filename(L"foo"));
+	EXPECT_TRUE(filename <= Filename(L"foo"));
+	EXPECT_FALSE(filename > Filename(L"foo"));
+	EXPECT_TRUE(filename >= Filename(L"foo"));
+
+	EXPECT_TRUE(filename.IsSameStringAs(Filename(L"foo")));
+	EXPECT_EQ(filename.hash(), Filename(L"foo").hash());
 }
 
-TEST_F(FilenameTest, opEquals_IsIdentity_ReturnTrue) {
+TEST_F(Filename_Test, opCompare_IsIdentity_CompareEqual) {
 	const Filename filename(L"foo");
 
 	EXPECT_TRUE(filename == filename);
 	EXPECT_FALSE(filename != filename);
+	EXPECT_FALSE(filename < filename);
+	EXPECT_TRUE(filename <= filename);
+	EXPECT_FALSE(filename > filename);
+	EXPECT_TRUE(filename >= filename);
+
+	EXPECT_TRUE(filename.IsSameStringAs(filename));
+	EXPECT_EQ(filename.hash(), filename.hash());
 }
 
-TEST_F(FilenameTest, opEquals_IsSameWithDifferentCase_ReturnTrue) {
+TEST_F(Filename_Test, opCompare_IsSameWithDifferentCase_CompareEqual) {
 	const Filename filename(L"foo");
 
 	EXPECT_TRUE(filename == Filename(L"Foo"));
 	EXPECT_FALSE(filename != Filename(L"Foo"));
+	EXPECT_FALSE(filename < Filename(L"Foo"));
+	EXPECT_TRUE(filename <= Filename(L"Foo"));
+	EXPECT_FALSE(filename > Filename(L"Foo"));
+	EXPECT_TRUE(filename >= Filename(L"Foo"));
+
+	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"Foo")));
+	EXPECT_EQ(filename.hash(), Filename(L"Foo").hash());
 }
 
-TEST_F(FilenameTest, opEquals_IsSameWithUmlaut_ReturnTrue) {
-	const Filename filename(L"foo\u00E4\u00DF");
+TEST_F(Filename_Test, opCompare_IsSameWithUmlaut_CompareEqual) {
+	const Filename filename(L"foo\u00E4\u00DF");  // E4 == a umlaut, DF == sz
 
 	EXPECT_TRUE(filename == Filename(L"foo\u00E4\u00DF"));
 	EXPECT_FALSE(filename != Filename(L"foo\u00E4\u00DF"));
+	EXPECT_FALSE(filename < Filename(L"foo\u00E4\u00DF"));
+	EXPECT_TRUE(filename <= Filename(L"foo\u00E4\u00DF"));
+	EXPECT_FALSE(filename > Filename(L"foo\u00E4\u00DF"));
+	EXPECT_TRUE(filename >= Filename(L"foo\u00E4\u00DF"));
+
+	EXPECT_TRUE(filename.IsSameStringAs(Filename(L"foo\u00E4\u00DF")));
+	EXPECT_EQ(filename.hash(), Filename(L"foo\u00E4\u00DF").hash());
 }
 
-TEST_F(FilenameTest, opEquals_IsSameWithUmlautAndAccentAndDifferentCase_ReturnTrue) {
-	const Filename filename(L"foo\u00E4\u00E9");
+TEST_F(Filename_Test, opCompare_IsSameWithUmlautAndAccentAndDifferentCase_CompareEqual) {
+	const Filename filename(L"foo\u00E4\u00E9");  // E4 == a umlaut, E9 == e accent ´
 
-	EXPECT_TRUE(filename == Filename(L"foo\u00C4\u00C9"));
+	EXPECT_TRUE(filename == Filename(L"foo\u00C4\u00C9"));  // C4 == A umlaut, C9 == E accent ´
 	EXPECT_FALSE(filename != Filename(L"foo\u00C4\u00C9"));
+	EXPECT_FALSE(filename < Filename(L"foo\u00C4\u00C9"));
+	EXPECT_TRUE(filename <= Filename(L"foo\u00C4\u00C9"));
+	EXPECT_FALSE(filename > Filename(L"foo\u00C4\u00C9"));
+	EXPECT_TRUE(filename >= Filename(L"foo\u00C4\u00C9"));
+
+	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"foo\u00C4\u00C9")));
+	EXPECT_EQ(filename.hash(), Filename(L"foo\u00C4\u00C9").hash());
 }
 
-TEST_F(FilenameTest, opEquals_IsDifferent_ReturnFalse) {
-	const Filename filename(L"foo\u00E4\u00DF");
+TEST_F(Filename_Test, opCompare_IsLessThan_CompareLessThan) {
+	const Filename filename(L"foo");
+
+	EXPECT_FALSE(filename == Filename(L"zar"));  // E4 == a umlaut, DF == sz
+	EXPECT_TRUE(filename != Filename(L"zar"));
+	EXPECT_TRUE(filename < Filename(L"zar"));
+	EXPECT_TRUE(filename <= Filename(L"zar"));
+	EXPECT_FALSE(filename > Filename(L"zar"));
+	EXPECT_FALSE(filename >= Filename(L"zar"));
+
+	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"zar")));
+	EXPECT_NE(filename.hash(), Filename(L"zar").hash());
+}
+
+TEST_F(Filename_Test, opCompare_IsLessThanAndSubstring_CompareLessThan) {
+	const Filename filename(L"foo");
+
+	EXPECT_FALSE(filename == Filename(L"fooo"));
+	EXPECT_TRUE(filename != Filename(L"fooo"));
+	EXPECT_TRUE(filename < Filename(L"fooo"));
+	EXPECT_TRUE(filename <= Filename(L"fooo"));
+	EXPECT_FALSE(filename > Filename(L"fooo"));
+	EXPECT_FALSE(filename >= Filename(L"fooo"));
+
+	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"fooo")));
+	EXPECT_NE(filename.hash(), Filename(L"fooo").hash());
+}
+
+TEST_F(Filename_Test, opCompare_IsGreatherThan_CompareGreatherThan) {
+	const Filename filename(L"foo");
 
 	EXPECT_FALSE(filename == Filename(L"bar"));
 	EXPECT_TRUE(filename != Filename(L"bar"));
-}
-
-TEST_F(FilenameTest, opEquals_IsDifferentForDiaeresisOnly_ReturnFalse) {
-	const Filename filename(L"foo");
-
-	EXPECT_FALSE(filename == Filename(L"fo\u00E6"));
-	EXPECT_TRUE(filename != Filename(L"fo\u00E6"));
-}
-
-TEST_F(FilenameTest, opEquals_IsDifferentForAccentOnly_ReturnFalse) {
-	const Filename filename(L"foo");
-
-	EXPECT_FALSE(filename == Filename(L"fo\u00F3"));
-	EXPECT_TRUE(filename != Filename(L"fo\u00F3"));
-}
-
-TEST_F(FilenameTest, opEquals_ErrorComparing_ThrowException) {
-	EXPECT_CALL(m_win32, CompareStringOrdinal(t::StrEq(L"foo"), t::_, t::StrEq(L"foo"), t::_, t::_))
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0))
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
-	const Filename filename(L"foo");
-
-	EXPECT_THROW(filename == Filename(L"foo"), m3c::windows_exception);
-	EXPECT_THROW(filename != Filename(L"foo"), m3c::windows_exception);
-}
-
-TEST_F(FilenameTest, CompareTo_IsSame_Return0) {
-	const Filename filename(L"foo");
-
-	EXPECT_EQ(0, filename.CompareTo(Filename(L"foo")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsIdentity_Return0) {
-	const Filename filename(L"foo");
-
-	EXPECT_EQ(0, filename.CompareTo(filename));
-}
-
-TEST_F(FilenameTest, CompareTo_IsSameWithDifferentCase_Return0) {
-	const Filename filename(L"foo");
-
-	EXPECT_EQ(0, filename.CompareTo(Filename(L"Foo")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsSameWithUmlaut_Return0) {
-	const Filename filename(L"foo\u00E4\u00DF");
-
-	EXPECT_EQ(0, filename.CompareTo(Filename(L"foo\u00E4\u00DF")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsSameWithUmlautAndAccentAndDifferentCase_Return0) {
-	const Filename filename(L"foo\u00E4\u00E9");
-
-	EXPECT_EQ(0, filename.CompareTo(Filename(L"foo\u00C4\u00C9")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsLess_ReturnPositive) {
-	const Filename filename(L"foo");
-
-	EXPECT_LT(0, filename.CompareTo(Filename(L"bar")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsLessAndSubstring_ReturnPositive) {
-	const Filename filename(L"foo");
-
-	EXPECT_LT(0, filename.CompareTo(Filename(L"fo")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsGreater_ReturnNegative) {
-	const Filename filename(L"foo");
-
-	EXPECT_GT(0, filename.CompareTo(Filename(L"zar")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsGreaterAndSubstring_ReturnNegative) {
-	const Filename filename(L"foo");
-
-	EXPECT_GT(0, filename.CompareTo(Filename(L"fooo")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsDifferentForDiaeresisOnly_ReturnNot0) {
-	const Filename filename(L"foo");
-
-	EXPECT_NE(0, filename.CompareTo(Filename(L"fo\u00E6")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsDifferentForAccentOnly_ReturnNot0) {
-	const Filename filename(L"foo");
-
-	EXPECT_NE(0, filename.CompareTo(Filename(L"fo\u00F3")));
-}
-
-TEST_F(FilenameTest, CompareTo_IsDifferentUmlauts_ReturnNot0) {
-	const Filename filename(L"foo\u00E0");
-
-	EXPECT_NE(0, filename.CompareTo(Filename(L"foo\u00E1")));
-}
-
-TEST_F(FilenameTest, CompareTo_ErrorComparing_ThrowException) {
-	EXPECT_CALL(m_win32, CompareStringOrdinal(t::StrEq(L"foo"), t::_, t::StrEq(L"foo"), t::_, t::_))
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
-	const Filename filename(L"foo");
-
-	EXPECT_THROW(filename.CompareTo(Filename(L"foo")), m3c::windows_exception);
-}
-
-TEST_F(FilenameTest, IsSameStringAs_IsSame_ReturnTrue) {
-	const Filename filename(L"foo");
-
-	EXPECT_TRUE(filename.IsSameStringAs(Filename(L"foo")));
-}
-
-TEST_F(FilenameTest, IsSameStringAs_IsIdentity_ReturnTrue) {
-	const Filename filename(L"foo");
-
-	EXPECT_TRUE(filename.IsSameStringAs(filename));
-}
-
-TEST_F(FilenameTest, IsSameStringAs_IsSameWithDifferentCase_ReturnFalse) {
-	const Filename filename(L"foo");
-
-	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"Foo")));
-}
-
-TEST_F(FilenameTest, IsSameStringAs_IsSameWithUmlaut_ReturnTrue) {
-	const Filename filename(L"foo\u00E4\u00DF");
-
-	EXPECT_TRUE(filename.IsSameStringAs(Filename(L"foo\u00E4\u00DF")));
-}
-
-TEST_F(FilenameTest, IsSameStringAs_IsSameWithUmlautAndAccentAndDifferentCase_ReturnFalse) {
-	const Filename filename(L"foo\u00E4\u00E9");
-
-	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"foo\u00C4\u00C9")));
-}
-
-TEST_F(FilenameTest, IsSameStringAs_IsLess_ReturnFalse) {
-	const Filename filename(L"foo");
+	EXPECT_FALSE(filename < Filename(L"bar"));
+	EXPECT_FALSE(filename <= Filename(L"bar"));
+	EXPECT_TRUE(filename > Filename(L"bar"));
+	EXPECT_TRUE(filename >= Filename(L"bar"));
 
 	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"bar")));
+	EXPECT_NE(filename.hash(), Filename(L"bar").hash());
 }
 
-TEST_F(FilenameTest, IsSameStringAs_IsLessAndSubstring_ReturnFalse) {
+TEST_F(Filename_Test, opCompare_IsGreatherThanAndSubstring_CompareGreatherThan) {
 	const Filename filename(L"foo");
+
+	EXPECT_FALSE(filename == Filename(L"fo"));
+	EXPECT_TRUE(filename != Filename(L"fo"));
+	EXPECT_FALSE(filename < Filename(L"fo"));
+	EXPECT_FALSE(filename <= Filename(L"fo"));
+	EXPECT_TRUE(filename > Filename(L"fo"));
+	EXPECT_TRUE(filename >= Filename(L"fo"));
 
 	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"fo")));
+	EXPECT_NE(filename.hash(), Filename(L"fo").hash());
 }
 
-TEST_F(FilenameTest, IsSameStringAs_IsGreater_ReturnFalse) {
+TEST_F(Filename_Test, opCompare_IsDifferentForDiaeresisOnly_CompareLessThan) {
 	const Filename filename(L"foo");
 
-	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"bar")));
+	EXPECT_FALSE(filename == Filename(L"fo\u00F6"));  // F6 == o umlaut
+	EXPECT_TRUE(filename != Filename(L"fo\u00F6"));
+	EXPECT_TRUE(filename < Filename(L"fo\u00F6"));
+	EXPECT_TRUE(filename <= Filename(L"fo\u00F6"));
+	EXPECT_FALSE(filename > Filename(L"fo\u00F6"));
+	EXPECT_FALSE(filename >= Filename(L"fo\u00F6"));
+
+	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"fo\u00F6")));
+	EXPECT_NE(filename.hash(), Filename(L"fo\u00F6").hash());
 }
 
-TEST_F(FilenameTest, IsSameStringAs_IsGreaterAndSubstring_ReturnFalse) {
+TEST_F(Filename_Test, opCompare_IsDifferentForAccentOnly_CompareLessThan) {
 	const Filename filename(L"foo");
 
-	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"fooo")));
-}
-
-TEST_F(FilenameTest, IsSameStringAs_IsDifferentForDiaeresisOnly_ReturnFalse) {
-	const Filename filename(L"foo");
-
-	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"fo\u00E6")));
-}
-
-TEST_F(FilenameTest, IsSameStringAs_IsDifferentForAccentOnly_ReturnFalse) {
-	const Filename filename(L"foo");
+	EXPECT_FALSE(filename == Filename(L"fo\u00F3"));  // F3 == o accent ´
+	EXPECT_TRUE(filename != Filename(L"fo\u00F3"));
+	EXPECT_TRUE(filename < Filename(L"fo\u00F3"));
+	EXPECT_TRUE(filename <= Filename(L"fo\u00F3"));
+	EXPECT_FALSE(filename > Filename(L"fo\u00F3"));
+	EXPECT_FALSE(filename >= Filename(L"fo\u00F3"));
 
 	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"fo\u00F3")));
+	EXPECT_NE(filename.hash(), Filename(L"fo\u00F3").hash());
 }
 
-TEST_F(FilenameTest, IsSameStringAs_IsDifferentUmlauts_ReturnFalse) {
-	const Filename filename(L"foo\u00E0");
+TEST_F(Filename_Test, opCompare_IsDifferentAccents_CompareNotEqual) {
+	const Filename filename(L"fo\u00E0");  // E0 == a accent `
 
-	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"foo\u00E1")));
+	EXPECT_FALSE(filename == Filename(L"fo\u00E1"));  // E1 == a accent ´
+	EXPECT_TRUE(filename != Filename(L"fo\u00E1"));
+	EXPECT_TRUE(filename < Filename(L"fo\u00E1"));
+	EXPECT_TRUE(filename <= Filename(L"fo\u00E1"));
+	EXPECT_FALSE(filename > Filename(L"fo\u00E1"));
+	EXPECT_FALSE(filename >= Filename(L"fo\u00E1"));
+
+	EXPECT_FALSE(filename.IsSameStringAs(Filename(L"fo\u00E1")));
+	EXPECT_NE(filename.hash(), Filename(L"fo\u00E1").hash());
 }
 
+TEST_F(Filename_Test, opCompare_ErrorComparing_ThrowException) {
+	EXPECT_CALL(m_win32, CompareStringOrdinal(t::StrEq(L"foo"), t::_, t::StrEq(L"foo"), t::_, t::_))
+		.Times(6)
+		.WillRepeatedly(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
+	const Filename filename(L"foo");
+
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(filename == Filename(L"foo"), m3c::windows_exception);
+#pragma warning(suppress : 4552)
+	EXPECT_THROW(filename != Filename(L"foo"), m3c::windows_exception);
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(filename < Filename(L"foo"), m3c::windows_exception);
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(filename <= Filename(L"foo"), m3c::windows_exception);
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(filename > Filename(L"foo"), m3c::windows_exception);
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(filename >= Filename(L"foo"), m3c::windows_exception);
+}
+
+TEST_F(Filename_Test, swap_ValueWithValue_ValueAndValue) {
+	Filename filename(L"foo");
+	Filename oth(L"bar");
+
+	filename.swap(oth);
+
+	EXPECT_STREQ(L"bar", filename.c_str());
+	EXPECT_STREQ(L"foo", oth.c_str());
+}
+
+TEST_F(Filename_Test, stdSwap_ValueWithValue_ValueAndValue) {
+	Filename filename(L"foo");
+	Filename oth(L"bar");
+
+	std::swap(filename, oth);
+
+	EXPECT_STREQ(L"bar", filename.c_str());
+	EXPECT_STREQ(L"foo", oth.c_str());
+}
+
+TEST_F(Filename_Test, stdHash_Value_ReturnHash) {
+	const std::wstring str(L"foo");
+	const Filename filename(str);
+	const size_t h = std::hash<Filename>{}(filename);
+
+	EXPECT_EQ(Filename(str).hash(), h);
+}
+
+TEST_F(Filename_Test, stdHash_DiffersInCase_HashEquals) {
+	const std::wstring str(L"foo");
+	const std::wstring oth(L"Foo");
+	const Filename filename(str);
+	const Filename othFilename(oth);
+	const size_t h = std::hash<Filename>{}(filename);
+	const size_t o = std::hash<Filename>{}(othFilename);
+
+	ASSERT_TRUE(filename == othFilename);
+	EXPECT_EQ(o, h);
+}
+
+TEST_F(Filename_Test, stdHash_DiffersInCaseWithUmlaut_HashEquals) {
+	const std::wstring str(L"fo\u00F6");
+	const std::wstring oth(L"Fo\u00D6");
+	const Filename filename(str);
+	const Filename othFilename(oth);
+	const size_t h = std::hash<Filename>{}(filename);
+	const size_t o = std::hash<Filename>{}(othFilename);
+
+	ASSERT_TRUE(filename == othFilename);
+	EXPECT_EQ(o, h);
+}
 
 //
 // Path
 //
 
-TEST_F(PathTest, ctor_IsRelative_MakeAbsolute) {
+TEST_F(Path_Test, ctor_IsRelative_MakeAbsolute) {
 	const Path systemDirectory = TestUtils::GetSystemDirectory();
 	ASSERT_EQ(TRUE, SetCurrentDirectoryW(systemDirectory.c_str()));
 
 	const Path path(L"foo");
 
 	// static_cast gives error in Intellisense
-	EXPECT_EQ((systemDirectory.operator const std::wstring &()) + LR"(\foo)", path.c_str());
+	EXPECT_EQ(systemDirectory.c_str() + std::wstring(LR"(\foo)"), path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsDrive_MakeRoot) {
+TEST_F(Path_Test, ctor_IsDrive_MakeRoot) {
 	const Path path(LR"(Q:)");
 
 	EXPECT_STREQ(LR"(Q:\)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsRoot_MakeRoot) {
+TEST_F(Path_Test, ctor_IsDriveRelative_MakeRoot) {
+	const Path path(LR"(Q:sub\foo.txt)");
+
+	EXPECT_STREQ(LR"(Q:\sub\foo.txt)", path.c_str());
+}
+
+TEST_F(Path_Test, ctor_IsRoot_MakeRoot) {
 	const Path path(LR"(Q:\)");
 
 	EXPECT_STREQ(LR"(Q:\)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsAbsolute_MakePath) {
+TEST_F(Path_Test, ctor_IsAbsolute_MakePath) {
 	const Path path(LR"(Q:\foo)");
 
 	EXPECT_STREQ(LR"(Q:\foo)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsAbsoluteWithSub_MakePath) {
+TEST_F(Path_Test, ctor_IsAbsoluteWithSub_MakePath) {
 	const Path path(LR"(Q:\foo\bar)");
 
 	EXPECT_STREQ(LR"(Q:\foo\bar)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsAbsoluteWithSubAndBackslash_RemoveBackslash) {
+TEST_F(Path_Test, ctor_IsAbsoluteWithSubAndBackslash_RemoveBackslash) {
 	const Path path(LR"(Q:\foo\bar\)");
 
 	EXPECT_STREQ(LR"(Q:\foo\bar)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsAbsoluteWithDot_RemoveDot) {
+TEST_F(Path_Test, ctor_IsAbsoluteWithDot_RemoveDot) {
 	const Path path(LR"(Q:\foo\.\bar)");
 
 	EXPECT_STREQ(LR"(Q:\foo\bar)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsAbsoluteWithDotDot_RemoveDotDot) {
+TEST_F(Path_Test, ctor_IsAbsoluteWithDotDot_RemoveDotDot) {
 	const Path path(LR"(Q:\foo\..\bar)");
 
 	EXPECT_STREQ(LR"(Q:\bar)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsVolume_MakeRoot) {
-	const Path path(kTestVolume);
-
-	EXPECT_EQ(kTestVolume + LR"(\)", path.c_str());
-}
-
-TEST_F(PathTest, ctor_IsVolumeRoot_MakeRoot) {
+TEST_F(Path_Test, ctor_IsVolumeRoot_MakeRoot) {
 	const Path path(kTestVolume + LR"(\)");
 
 	EXPECT_EQ(kTestVolume + LR"(\)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsVolumepPath_MakePath) {
+TEST_F(Path_Test, ctor_IsVolumePath_MakePath) {
 	const Path path(kTestVolume + LR"(\foo)");
 
 	EXPECT_EQ(kTestVolume + LR"(\foo)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsVolumePathWithBackslash_RemoveBackslash) {
+TEST_F(Path_Test, ctor_IsVolumePathWithBackslash_RemoveBackslash) {
 	const Path path(kTestVolume + LR"(\foo\)");
 
 	EXPECT_EQ(kTestVolume + LR"(\foo)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsForwardSlash_ConvertToBackslash) {
+TEST_F(Path_Test, ctor_IsForwardSlash_ConvertToBackslash) {
 	const Path path(LR"(Q:/foo/bar)");
 
 	EXPECT_STREQ(LR"(Q:\foo\bar)", path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsLongAbsolute_MakeLongPath) {
+TEST_F(Path_Test, ctor_IsLongAbsolute_MakeLongPath) {
 	const std::wstring name = LR"(Q:\)" + std::wstring(MAX_PATH, L'x') + LR"(\foo)";
 	const Path path(name);
 
 	EXPECT_EQ(LR"(\\?\)" + name, path.c_str());
 }
 
-TEST_F(PathTest, ctor_IsLongRelative_MakeLongPath) {
+TEST_F(Path_Test, ctor_IsLongRelative_MakeLongPath) {
 	const Path systemDirectory = TestUtils::GetSystemDirectory();
 	ASSERT_EQ(TRUE, SetCurrentDirectoryW(systemDirectory.c_str()));
 
-	const std::wstring name = std::wstring(MAX_PATH, L'x') + LR"(\foo)";
+	const std::wstring name = std::wstring(MAX_PATH - 10, L'x') + LR"(\foo)";
 
 	const Path path(name);
 
 	// static_cast gives error in Intellisense
-	EXPECT_EQ(LR"(\\?\)" + (systemDirectory.operator const std::wstring &()) + LR"(\)" + name, path.c_str());
+	EXPECT_EQ(std::wstring(LR"(\\?\)") + systemDirectory.c_str() + LR"(\)" + name, path.c_str());
 }
 
-TEST_F(PathTest, ctor_ErrorGettingPathBufferSize_ThrowError) {
-	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(L"Q:\\foo"), 0, t::_, nullptr))
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
-
-	EXPECT_THROW(Path(LR"(Q:\foo)"), m3c::windows_exception);
-}
-
-TEST_F(PathTest, ctor_ErrorGettingPathName_ThrowError) {
-	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(L"Q:\\foo"), 0, t::_, nullptr));
+TEST_F(Path_Test, ctor_ErrorGettingPathName_ThrowError) {
 	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(L"Q:\\foo"), t::Gt(0u), t::_, nullptr))
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
 
-	EXPECT_THROW(Path(LR"(Q:\foo)"), m3c::windows_exception);
+	EXPECT_THROW(Path(L"Q:\\foo"), m3c::windows_exception);
 }
 
-TEST_F(PathTest, ctor_ErrorNormalizing_ThrowError) {
-	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(L"Q:\\foo"), 0, t::_, nullptr));
-	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(L"Q:\\foo"), t::Gt(0u), t::_, nullptr));
-	EXPECT_CALL(m_win32, PathCchAppendEx(t::StrEq(L"Q:\\foo"), t::_, t::StrEq(L"."), t::_))
+TEST_F(Path_Test, ctor_ErrorGettingLongPathBufferSize_ThrowError) {
+	std::wstring name(MAX_PATH, 'x');
+	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(LR"(Q:\foo\)" + name), t::Gt(0u), t::_, nullptr))
+		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
+
+	EXPECT_THROW(Path(LR"(Q:\foo\)" + name), m3c::windows_exception);
+}
+
+TEST_F(Path_Test, ctor_ErrorGettingLongPathName_ThrowError) {
+	std::wstring name(MAX_PATH, 'x');
+	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(LR"(Q:\foo\)" + name), t::Gt(0u), t::_, nullptr))
+		.WillOnce(dtgm::SetLastErrorAndReturn(0, MAX_PATH * 2))
+		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
+
+	EXPECT_THROW(Path(LR"(Q:\foo\)" + name), m3c::windows_exception);
+}
+
+TEST_F(Path_Test, ctor_ErrorNormalizing_ThrowError) {
+	EXPECT_CALL(m_win32, PathCchCanonicalizeEx(t::_, t::_, t::StrEq(L"Q:\\foo"), t::_))
 		.WillOnce(t::Return(HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)));
 
 	EXPECT_THROW(Path(LR"(Q:\foo)"), m3c::com_exception);
 }
 
-TEST_F(PathTest, ctor_ErrorRemovingBackslash_ThrowError) {
-	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(L"Q:\\foo"), 0, t::_, nullptr));
-	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(L"Q:\\foo"), t::Gt(0u), t::_, nullptr));
-	EXPECT_CALL(m_win32, PathCchAppendEx(t::StrEq(L"Q:\\foo"), t::_, t::StrEq(L"."), t::_));
-	EXPECT_CALL(m_win32, PathCchRemoveBackslashEx(t::StrEq(L"Q:\\foo\\"), t::_, t::_, t::_))
+TEST_F(Path_Test, ctor_ErrorRemovingBackslash_ThrowError) {
+	EXPECT_CALL(m_win32, PathCchRemoveBackslashEx(t::StrEq(L"Q:\\foo"), t::_, t::_, t::_))
 		.WillOnce(t::Return(HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)));
 
 	EXPECT_THROW(Path(LR"(Q:\foo)"), m3c::com_exception);
 }
 
-TEST_F(PathTest, opEquals_IsSame_ReturnTrue) {
+TEST_F(Path_Test, ctor_String_MakePath) {
+	const std::wstring value(LR"(Q:\foo)");
+
+	const Path path(value);
+
+	EXPECT_STREQ(LR"(Q:\foo)", path.c_str());
+}
+
+TEST_F(Path_Test, ctor_StringView_MakePath) {
+	const std::wstring_view value(LR"(Q:\foox)", 6);
+
+	const Path path(value);
+
+	EXPECT_STREQ(LR"(Q:\foo)", path.c_str());
+}
+
+TEST_F(Path_Test, opCompare_IsSame_CompareEqual) {
 	const Path path(LR"(Q:\foo)");
 
 	EXPECT_TRUE(path == Path(LR"(Q:\foo)"));
 	EXPECT_FALSE(path != Path(LR"(Q:\foo)"));
+	EXPECT_FALSE(path < Path(LR"(Q:\foo)"));
+	EXPECT_TRUE(path <= Path(LR"(Q:\foo)"));
+	EXPECT_FALSE(path > Path(LR"(Q:\foo)"));
+	EXPECT_TRUE(path >= Path(LR"(Q:\foo)"));
+
+	EXPECT_EQ(path.hash(), Path(LR"(Q:\foo)").hash());
 }
 
-TEST_F(PathTest, opEquals_IsIdentity_ReturnTrue) {
+TEST_F(Path_Test, opCompare_IsIdentity_CompareEqual) {
 	const Path path(LR"(Q:\foo)");
 
 	EXPECT_TRUE(path == path);
 	EXPECT_FALSE(path != path);
+	EXPECT_FALSE(path < path);
+	EXPECT_TRUE(path <= path);
+	EXPECT_FALSE(path > path);
+	EXPECT_TRUE(path >= path);
+
+	EXPECT_EQ(path.hash(), path.hash());
 }
 
-TEST_F(PathTest, opEquals_IsSameWithDifferentCase_ReturnTrue) {
+TEST_F(Path_Test, opCompare_IsSameWithDifferentCase_CompareEqual) {
 	const Path path(LR"(Q:\foo)");
 
 	EXPECT_TRUE(path == Path(LR"(q:\Foo)"));
 	EXPECT_FALSE(path != Path(LR"(q:\Foo)"));
+	EXPECT_FALSE(path < Path(LR"(q:\Foo)"));
+	EXPECT_TRUE(path <= Path(LR"(q:\Foo)"));
+	EXPECT_FALSE(path > Path(LR"(q:\Foo)"));
+	EXPECT_TRUE(path >= Path(LR"(q:\Foo)"));
+
+	EXPECT_EQ(path.hash(), Path(LR"(q:\Foo)").hash());
 }
 
-TEST_F(PathTest, opEquals_IsSameWithUmlaut_ReturnTrue) {
+TEST_F(Path_Test, opCompare_IsSameWithUmlaut_CompareEqual) {
 	const Path path(L"Q:\\foo\u00E4\u00DF");
 
 	EXPECT_TRUE(path == Path(L"Q:\\foo\u00E4\u00DF"));
 	EXPECT_FALSE(path != Path(L"Q:\\foo\u00E4\u00DF"));
+	EXPECT_FALSE(path < Path(L"Q:\\foo\u00E4\u00DF"));
+	EXPECT_TRUE(path <= Path(L"Q:\\foo\u00E4\u00DF"));
+	EXPECT_FALSE(path > Path(L"Q:\\foo\u00E4\u00DF"));
+	EXPECT_TRUE(path >= Path(L"Q:\\foo\u00E4\u00DF"));
+
+	EXPECT_EQ(path.hash(), Path(L"Q:\\foo\u00E4\u00DF").hash());
 }
 
-TEST_F(PathTest, opEquals_IsSameWithUmlautAndAccentAndDifferentCase_ReturnTrue) {
+TEST_F(Path_Test, opCompare_IsSameWithUmlautAndAccentAndDifferentCase_CompareEqual) {
 	const Path path(L"Q:\\foo\u00E4\u00E9");
 
 	EXPECT_TRUE(path == Path(L"Q:\\foo\u00C4\u00C9"));
 	EXPECT_FALSE(path != Path(L"Q:\\foo\u00C4\u00C9"));
+	EXPECT_FALSE(path < Path(L"Q:\\foo\u00C4\u00C9"));
+	EXPECT_TRUE(path <= Path(L"Q:\\foo\u00C4\u00C9"));
+	EXPECT_FALSE(path > Path(L"Q:\\foo\u00C4\u00C9"));
+	EXPECT_TRUE(path >= Path(L"Q:\\foo\u00C4\u00C9"));
+
+	EXPECT_EQ(path.hash(), Path(L"Q:\\foo\u00C4\u00C9").hash());
 }
 
-TEST_F(PathTest, opEquals_IsDifferent_ReturnFalse) {
+TEST_F(Path_Test, opCompare_IsLessThan_CompareLessThan) {
+	const Path path(LR"(Q:\foo)");
+
+	EXPECT_FALSE(path == Path(LR"(Q:\zar)"));
+	EXPECT_TRUE(path != Path(LR"(Q:\zar)"));
+	EXPECT_TRUE(path < Path(LR"(Q:\zar)"));
+	EXPECT_TRUE(path <= Path(LR"(Q:\zar)"));
+	EXPECT_FALSE(path > Path(LR"(Q:\zar)"));
+	EXPECT_FALSE(path >= Path(LR"(Q:\zar)"));
+
+	EXPECT_NE(path.hash(), Path(LR"(Q:\zar)").hash());
+}
+
+TEST_F(Path_Test, opCompare_IsGreaterThan_CompareGreaterThan) {
 	const Path path(LR"(Q:\foo)");
 
 	EXPECT_FALSE(path == Path(LR"(Q:\bar)"));
 	EXPECT_TRUE(path != Path(LR"(Q:\bar)"));
+	EXPECT_FALSE(path < Path(LR"(Q:\bar)"));
+	EXPECT_FALSE(path <= Path(LR"(Q:\bar)"));
+	EXPECT_TRUE(path > Path(LR"(Q:\bar)"));
+	EXPECT_TRUE(path >= Path(LR"(Q:\bar)"));
+
+	EXPECT_NE(path.hash(), Path(LR"(Q:\bar)").hash());
 }
 
-TEST_F(PathTest, opEquals_IsDifferentForDiaeresisOnly_ReturnFalse) {
+TEST_F(Path_Test, opCompare_IsDifferentForDiaeresisOnly_CompareLessThan) {
 	const Path path(L"Q:\\foo");
 
-	EXPECT_FALSE(path == Path(L"Q:\\fo\u00E6"));
-	EXPECT_TRUE(path != Path(L"Q:\\fo\u00E6"));
+	EXPECT_FALSE(path == Path(L"Q:\\fo\u00F6"));  // F6 == o umlaut
+	EXPECT_TRUE(path != Path(L"Q:\\fo\u00F6"));
+	EXPECT_TRUE(path < Path(L"Q:\\fo\u00F6"));
+	EXPECT_TRUE(path <= Path(L"Q:\\fo\u00F6"));
+	EXPECT_FALSE(path > Path(L"Q:\\fo\u00F6"));
+	EXPECT_FALSE(path >= Path(L"Q:\\fo\u00F6"));
+
+	EXPECT_NE(path.hash(), Path(L"Q:\\fo\u00F6").hash());
 }
 
-TEST_F(PathTest, opEquals_IsDifferentForAccentOnly_ReturnFalse) {
+TEST_F(Path_Test, opCompare_IsDifferentForAccentOnly_CompareLessThan) {
 	const Path path(L"Q:\\foo");
 
-	EXPECT_FALSE(path == Path(L"Q:\\fo\u00F3"));
+	EXPECT_FALSE(path == Path(L"Q:\\fo\u00F3"));  // F3 == o accent ´
 	EXPECT_TRUE(path != Path(L"Q:\\fo\u00F3"));
+	EXPECT_TRUE(path < Path(L"Q:\\fo\u00F3"));
+	EXPECT_TRUE(path <= Path(L"Q:\\fo\u00F3"));
+	EXPECT_FALSE(path > Path(L"Q:\\fo\u00F3"));
+	EXPECT_FALSE(path >= Path(L"Q:\\fo\u00F3"));
+
+	EXPECT_NE(path.hash(), Path(L"Q:\\fo\u00F3").hash());
 }
 
-TEST_F(PathTest, opEquals_IsDifferentUmlauts_ReturnFalse) {
-	const Path path(L"Q:\\foo\u00E0");
+TEST_F(Path_Test, opCompare_IsDifferentAccents_CompareNotEqual) {
+	const Path path(L"Q:\\foo\u00E0");  // E0 == a accent `
 
-	EXPECT_FALSE(path == Path(L"Q:\\fo\u00E1"));
+	EXPECT_FALSE(path == Path(L"Q:\\fo\u00E1"));  // E1 == a accent ´
 	EXPECT_TRUE(path != Path(L"Q:\\fo\u00E1"));
+	EXPECT_TRUE(path < Path(L"Q:\\fo\u00E1"));
+	EXPECT_TRUE(path <= Path(L"Q:\\fo\u00E1"));
+	EXPECT_FALSE(path > Path(L"Q:\\fo\u00E1"));
+	EXPECT_FALSE(path >= Path(L"Q:\\fo\u00E1"));
+
+	EXPECT_NE(path.hash(), Path(L"Q:\\fo\u00E1").hash());
 }
 
-TEST_F(PathTest, opEquals_ErrorComparing_ThrowException) {
+TEST_F(Path_Test, opCompare_ErrorComparing_ThrowException) {
 	EXPECT_CALL(m_win32, CompareStringOrdinal(t::StrEq(L"Q:\\foo"), t::_, t::StrEq(L"Q:\\foo"), t::_, t::_))
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0))
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
+		.Times(6)
+		.WillRepeatedly(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
 	const Path path(LR"(Q:\foo)");
 
+#pragma warning(suppress : 4834)
 	EXPECT_THROW(path == Path(LR"(Q:\foo)"), m3c::windows_exception);
+#pragma warning(suppress : 4552)
 	EXPECT_THROW(path != Path(LR"(Q:\foo)"), m3c::windows_exception);
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(path < Path(LR"(Q:\foo)"), m3c::windows_exception);
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(path <= Path(LR"(Q:\foo)"), m3c::windows_exception);
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(path > Path(LR"(Q:\foo)"), m3c::windows_exception);
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(path >= Path(LR"(Q:\foo)"), m3c::windows_exception);
 }
 
-TEST_F(PathTest, opAppend_Directory_AppendDirectory) {
+TEST_F(Path_Test, opAppend_Directory_AppendDirectory) {
 	Path path(LR"(Q:\foo)");
 
 	path /= L"bar";
@@ -749,7 +867,7 @@ TEST_F(PathTest, opAppend_Directory_AppendDirectory) {
 	EXPECT_STREQ(LR"(Q:\foo\bar)", path.c_str());
 }
 
-TEST_F(PathTest, opAppend_DirectoryWithSeparator_AppendDirectory) {
+TEST_F(Path_Test, opAppend_DirectoryWithSeparator_AppendDirectory) {
 	Path path(LR"(Q:\foo)");
 
 	path /= LR"(\bar)";
@@ -757,7 +875,7 @@ TEST_F(PathTest, opAppend_DirectoryWithSeparator_AppendDirectory) {
 	EXPECT_STREQ(LR"(Q:\foo\bar)", path.c_str());
 }
 
-TEST_F(PathTest, opAppend_Empty_DoNotChange) {
+TEST_F(Path_Test, opAppend_Empty_DoNotChange) {
 	Path path(LR"(Q:\foo)");
 
 	path /= L"";
@@ -765,7 +883,7 @@ TEST_F(PathTest, opAppend_Empty_DoNotChange) {
 	EXPECT_STREQ(LR"(Q:\foo)", path.c_str());
 }
 
-TEST_F(PathTest, opAppend_RootPath_ChangeRoot) {
+TEST_F(Path_Test, opAppend_RootPath_ChangeRoot) {
 	Path path(LR"(Q:\foo)");
 
 	path /= LR"(R:\bar\)";
@@ -773,7 +891,7 @@ TEST_F(PathTest, opAppend_RootPath_ChangeRoot) {
 	EXPECT_STREQ(LR"(R:\bar)", path.c_str());
 }
 
-TEST_F(PathTest, opAppend_LongPath_MakeLongPath) {
+TEST_F(Path_Test, opAppend_LongPath_MakeLongPath) {
 	Path path(LR"(Q:\foo)");
 	std::wstring name(MAX_PATH, L'x');
 
@@ -782,7 +900,17 @@ TEST_F(PathTest, opAppend_LongPath_MakeLongPath) {
 	EXPECT_EQ(LR"(\\?\Q:\foo\)" + name, path.c_str());
 }
 
-TEST_F(PathTest, opAppend_LongPathWithDotDot_MakeLongPathAndRemoveDotDot) {
+TEST_F(Path_Test, opAppend_ResultIsLong_MakeLongPath) {
+	Path path(LR"(Q:\foo)" + std::wstring(MAX_PATH / 2, L'y'));
+	std::wstring name(MAX_PATH / 2, L'x');
+	ASSERT_THAT(path.c_str(), t::Not(t::StartsWith(LR"(\\?\)")));
+
+	path /= name;
+
+	EXPECT_EQ(LR"(\\?\Q:\foo)" + std::wstring(MAX_PATH / 2, L'y') + L'\\' + name, path.c_str());
+}
+
+TEST_F(Path_Test, opAppend_LongPathWithDotDot_MakeLongPathAndRemoveDotDot) {
 	Path path(LR"(Q:\foo)");
 	const std::wstring name(MAX_PATH, L'x');
 
@@ -791,7 +919,7 @@ TEST_F(PathTest, opAppend_LongPathWithDotDot_MakeLongPathAndRemoveDotDot) {
 	EXPECT_EQ(LR"(\\?\Q:\foo\)" + name + LR"(\baz)", path.c_str());
 }
 
-TEST_F(PathTest, opAppend_DotDotToLong_RemoveDotDot) {
+TEST_F(Path_Test, opAppend_DotDotToLong_RemoveDotDot) {
 	const std::wstring name = LR"(Q:\)" + std::wstring(MAX_PATH, L'x') + LR"(\foo)";
 	Path path(name);
 
@@ -800,7 +928,7 @@ TEST_F(PathTest, opAppend_DotDotToLong_RemoveDotDot) {
 	EXPECT_EQ(LR"(\\?\)" + name + LR"(\baz)", path.c_str());
 }
 
-TEST_F(PathTest, opAppend_ErrorAppending_ThrowException) {
+TEST_F(Path_Test, opAppend_ErrorAppending_ThrowException) {
 	EXPECT_CALL(m_win32, PathCchAppendEx(t::StrEq(L"Q:\\foo"), t::_, t::StrEq(L"bar"), t::_))
 		.WillOnce(t::Return(HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)));
 	Path path(LR"(Q:\foo)");
@@ -809,7 +937,7 @@ TEST_F(PathTest, opAppend_ErrorAppending_ThrowException) {
 	EXPECT_STREQ(LR"(Q:\foo)", path.c_str());
 }
 
-TEST_F(PathTest, opAppend_ErrorRemovingBackslash_ThrowException) {
+TEST_F(Path_Test, opAppend_ErrorRemovingBackslash_ThrowException) {
 	EXPECT_CALL(m_win32, PathCchAppendEx(t::StrEq(L"Q:\\foo"), t::_, t::StrEq(L"bar"), t::_));
 	EXPECT_CALL(m_win32, PathCchRemoveBackslashEx(t::StrEq(L"Q:\\foo\\bar"), t::_, t::_, t::_))
 		.WillOnce(t::Return(HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)));
@@ -819,7 +947,7 @@ TEST_F(PathTest, opAppend_ErrorRemovingBackslash_ThrowException) {
 	EXPECT_STREQ(LR"(Q:\foo)", path.c_str());
 }
 
-TEST_F(PathTest, opConcat_Directory_ReturnWithDirectoryAppended) {
+TEST_F(Path_Test, opConcat_Directory_ReturnWithDirectoryAppended) {
 	const Path path(LR"(Q:\foo)");
 
 	const Path result = path / L"bar";
@@ -827,7 +955,7 @@ TEST_F(PathTest, opConcat_Directory_ReturnWithDirectoryAppended) {
 	EXPECT_STREQ(LR"(Q:\foo\bar)", result.c_str());
 }
 
-TEST_F(PathTest, opConcat_DirectoryWithSeparator_ReturnWithDirectoryAppended) {
+TEST_F(Path_Test, opConcat_DirectoryWithSeparator_ReturnWithDirectoryAppended) {
 	const Path path(LR"(Q:\foo)");
 
 	const Path result = path / LR"(\bar)";
@@ -835,7 +963,7 @@ TEST_F(PathTest, opConcat_DirectoryWithSeparator_ReturnWithDirectoryAppended) {
 	EXPECT_STREQ(LR"(Q:\foo\bar)", result.c_str());
 }
 
-TEST_F(PathTest, opConcat_Empty_ReturnUnchanged) {
+TEST_F(Path_Test, opConcat_Empty_ReturnUnchanged) {
 	const Path path(LR"(Q:\foo)");
 
 	const Path result = path / L"";
@@ -843,7 +971,7 @@ TEST_F(PathTest, opConcat_Empty_ReturnUnchanged) {
 	EXPECT_STREQ(LR"(Q:\foo)", result.c_str());
 }
 
-TEST_F(PathTest, opConcat_RootPath_ReturnNewRoot) {
+TEST_F(Path_Test, opConcat_RootPath_ReturnNewRoot) {
 	const Path path(LR"(Q:\foo)");
 
 	const Path result = path / LR"(R:\bar\)";
@@ -851,7 +979,7 @@ TEST_F(PathTest, opConcat_RootPath_ReturnNewRoot) {
 	EXPECT_STREQ(LR"(R:\bar)", result.c_str());
 }
 
-TEST_F(PathTest, opConcat_LongPath_ReturnLongPath) {
+TEST_F(Path_Test, opConcat_LongPath_ReturnLongPath) {
 	const Path path(LR"(Q:\foo)");
 	std::wstring name(MAX_PATH, L'x');
 
@@ -860,7 +988,17 @@ TEST_F(PathTest, opConcat_LongPath_ReturnLongPath) {
 	EXPECT_EQ(LR"(\\?\Q:\foo\)" + name, result.c_str());
 }
 
-TEST_F(PathTest, opConcat_LongPathWithDotDot_ReturnLongPathAndRemoveDotDot) {
+TEST_F(Path_Test, opConcat_ResultIsLong_MakeLongPath) {
+	const Path path(LR"(Q:\foo)" + std::wstring(MAX_PATH / 2, L'y'));
+	std::wstring name(MAX_PATH / 2, L'x');
+	ASSERT_THAT(path.c_str(), t::Not(t::StartsWith(LR"(\\?\)")));
+
+	const Path result = path / name;
+
+	EXPECT_EQ(LR"(\\?\Q:\foo)" + std::wstring(MAX_PATH / 2, L'y') + L'\\' + name, result.c_str());
+}
+
+TEST_F(Path_Test, opConcat_LongPathWithDotDot_ReturnLongPathAndRemoveDotDot) {
 	const Path path(LR"(Q:\foo)");
 	const std::wstring name(MAX_PATH, L'x');
 
@@ -869,7 +1007,7 @@ TEST_F(PathTest, opConcat_LongPathWithDotDot_ReturnLongPathAndRemoveDotDot) {
 	EXPECT_EQ(LR"(\\?\Q:\foo\)" + name + LR"(\baz)", result.c_str());
 }
 
-TEST_F(PathTest, opConcat_DotDotToLong_ReturnWithDotDotRemoved) {
+TEST_F(Path_Test, opConcat_DotDotToLong_ReturnWithDotDotRemoved) {
 	const std::wstring name = LR"(Q:\)" + std::wstring(MAX_PATH, L'x') + LR"(\foo)";
 	const Path path(name);
 
@@ -878,21 +1016,21 @@ TEST_F(PathTest, opConcat_DotDotToLong_ReturnWithDotDotRemoved) {
 	EXPECT_EQ(LR"(\\?\)" + name + LR"(\baz)", result.c_str());
 }
 
-TEST_F(PathTest, opStdWstring_call_ReturnString) {
+TEST_F(Path_Test, str_call_ReturnString) {
 	const Path path(LR"(Q:\foo)");
 
 	// static_cast gives error in Intellisense
-	const std::wstring value = (path.operator const std::wstring &());
+	const std::wstring_view value = path.sv();
 	EXPECT_EQ(LR"(Q:\foo)", value);
 }
 
-TEST_F(PathTest, Exists_IsSystemDirectory_ReturnTrue) {
+TEST_F(Path_Test, Exists_IsSystemDirectory_ReturnTrue) {
 	const Path path = TestUtils::GetSystemDirectory();
 
 	EXPECT_TRUE(path.Exists());
 }
 
-TEST_F(PathTest, Exists_IsSystemRoot_ReturnTrue) {
+TEST_F(Path_Test, Exists_IsSystemRoot_ReturnTrue) {
 	Path path = TestUtils::GetSystemDirectory();
 	for (Path parent = path.GetParent(); path != parent; parent = path.GetParent()) {
 		path = parent;
@@ -901,27 +1039,28 @@ TEST_F(PathTest, Exists_IsSystemRoot_ReturnTrue) {
 	EXPECT_TRUE(path.Exists());
 }
 
-TEST_F(PathTest, Exists_DoesNotExist_ReturnFalse) {
+TEST_F(Path_Test, Exists_DoesNotExist_ReturnFalse) {
 	const Path path(LR"(Q:\file_does_not_exist.321)");
 
 	EXPECT_FALSE(path.Exists());
 }
 
-TEST_F(PathTest, Exists_Error_ThrowException) {
+TEST_F(Path_Test, Exists_Error_ThrowException) {
 	EXPECT_CALL(m_win32, GetFileAttributesW(t::StrEq(L"Q:\\foo.txt")))
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, INVALID_FILE_ATTRIBUTES));
 	const Path path(LR"(Q:\foo.txt)");
 
+#pragma warning(suppress : 4834)
 	EXPECT_THROW(path.Exists(), m3c::windows_exception);
 }
 
-TEST_F(PathTest, IsDirectory_IsSystemDirectory_ReturnTrue) {
+TEST_F(Path_Test, IsDirectory_IsSystemDirectory_ReturnTrue) {
 	const Path path = TestUtils::GetSystemDirectory();
 
 	EXPECT_TRUE(path.IsDirectory());
 }
 
-TEST_F(PathTest, IsDirectory_IsFileInSystemDirectory_ReturnFalse) {
+TEST_F(Path_Test, IsDirectory_IsFileInSystemDirectory_ReturnFalse) {
 	Path path = TestUtils::GetSystemDirectory();
 	path /= L"user32.dll";
 	ASSERT_TRUE(path.Exists());
@@ -929,22 +1068,24 @@ TEST_F(PathTest, IsDirectory_IsFileInSystemDirectory_ReturnFalse) {
 	EXPECT_FALSE(path.IsDirectory());
 }
 
-TEST_F(PathTest, IsDirectory_DoesNotExist_ThrowException) {
+TEST_F(Path_Test, IsDirectory_DoesNotExist_ThrowException) {
 	const Path path(LR"(Q:\file_does_not_exist.321)");
 
+#pragma warning(suppress : 4834)
 	EXPECT_THROW(path.IsDirectory(), m3c::windows_exception);
 }
 
-TEST_F(PathTest, IsDirectory_Error_ThrowException) {
+TEST_F(Path_Test, IsDirectory_Error_ThrowException) {
 	EXPECT_CALL(m_win32, GetFileAttributesW(t::StrEq(L"Q:\\foo.txt")))
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, INVALID_FILE_ATTRIBUTES));
 	const Path path(LR"(Q:\foo.txt)");
 
+#pragma warning(suppress : 4834)
 	EXPECT_THROW(path.IsDirectory(), m3c::windows_exception);
 }
 
 
-TEST_F(PathTest, GetParent_IsSubDirectory_ReturnRoot) {
+TEST_F(Path_Test, GetParent_IsSubDirectory_ReturnRoot) {
 	const Path path(LR"(Q:\foo)");
 
 	const Path parent = path.GetParent();
@@ -952,7 +1093,14 @@ TEST_F(PathTest, GetParent_IsSubDirectory_ReturnRoot) {
 	EXPECT_STREQ(LR"(Q:\)", parent.c_str());
 }
 
-TEST_F(PathTest, GetParent_IsSubDirectoryWithSubDirectory_ReturnSubDirectory) {
+TEST_F(Path_Test, GetParent_IsVolumeSubDirectory_ReturnRoot) {
+	const Path path(kTestVolume + LR"(\foo)");
+	const Path parent = path.GetParent();
+
+	EXPECT_EQ(kTestVolume + LR"(\)", parent.c_str());
+}
+
+TEST_F(Path_Test, GetParent_IsSubDirectoryWithSubDirectory_ReturnSubDirectory) {
 	const Path path(LR"(Q:\foo\bar)");
 
 	const Path parent = path.GetParent();
@@ -960,7 +1108,7 @@ TEST_F(PathTest, GetParent_IsSubDirectoryWithSubDirectory_ReturnSubDirectory) {
 	EXPECT_STREQ(LR"(Q:\foo)", parent.c_str());
 }
 
-TEST_F(PathTest, GetParent_IsSubDirectoryWithFile_ReturnSubDirectory) {
+TEST_F(Path_Test, GetParent_IsSubDirectoryWithFile_ReturnSubDirectory) {
 	const Path path(LR"(Q:\foo\bar.txt)");
 
 	const Path parent = path.GetParent();
@@ -968,7 +1116,7 @@ TEST_F(PathTest, GetParent_IsSubDirectoryWithFile_ReturnSubDirectory) {
 	EXPECT_STREQ(LR"(Q:\foo)", parent.c_str());
 }
 
-TEST_F(PathTest, GetParent_IsDriveRoot_ReturnRoot) {
+TEST_F(Path_Test, GetParent_IsDriveRoot_ReturnRoot) {
 	const Path path(LR"(Q:\)");
 
 	const Path parent = path.GetParent();
@@ -976,119 +1124,213 @@ TEST_F(PathTest, GetParent_IsDriveRoot_ReturnRoot) {
 	EXPECT_STREQ(LR"(Q:\)", parent.c_str());
 }
 
-TEST_F(PathTest, GetParent_IsVolumeRoot_ReturnRoot) {
-	const Path path(kTestVolume);
+TEST_F(Path_Test, GetParent_IsVolumeRoot_ReturnRoot) {
+	const Path path(kTestVolume + LR"(\)");
 
 	const Path parent = path.GetParent();
 
 	EXPECT_EQ(kTestVolume + LR"(\)", parent.c_str());
 }
 
-TEST_F(PathTest, GetParent_ErrorGettingParent_ThrowException) {
+TEST_F(Path_Test, GetParent_IsLong_GetWithPrefix) {
+	const Path path(LR"(Q:\foo\)" + std::wstring(MAX_PATH, L'x'));
+	ASSERT_THAT(path.c_str(), t::StartsWith(LR"(\\?\)"));
+
+	const Path parent = path.GetParent();
+
+	EXPECT_STREQ(LR"(\\?\Q:\foo)", parent.c_str());
+}
+
+TEST_F(Path_Test, GetParent_ErrorGettingParent_ThrowException) {
 	EXPECT_CALL(m_win32, PathCchRemoveFileSpec(t::StrEq(L"Q:\\foo\\bar.txt"), t::_))
 		.WillOnce(t::Return(HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)));
 	const Path path(LR"(Q:\foo\bar.txt)");
 
+#pragma warning(suppress : 4834)
 	EXPECT_THROW(path.GetParent(), m3c::com_exception);
 }
 
-TEST_F(PathTest, GetFilename_IsFileInRoot_ReturnFilename) {
+TEST_F(Path_Test, GetFilename_IsFileInRoot_ReturnFilename) {
 	const Path path(LR"(Q:\foo.txt)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"(foo.txt)", filename.c_str());
+	EXPECT_STREQ(L"foo.txt", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_IsFileInVolumeRoot_ReturnFilename) {
+TEST_F(Path_Test, GetFilename_IsFileInVolumeRoot_ReturnFilename) {
 	const Path path(kTestVolume + LR"(\foo.txt)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"(foo.txt)", filename.c_str());
+	EXPECT_STREQ(L"foo.txt", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_IsFileInSubDirectory_ReturnFilename) {
+TEST_F(Path_Test, GetFilename_IsFileInSubDirectory_ReturnFilename) {
 	const Path path(LR"(Q:\bar\foo.txt)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"(foo.txt)", filename.c_str());
+	EXPECT_STREQ(L"foo.txt", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_IsFileInVolumeSubDirectory_ReturnFilename) {
+TEST_F(Path_Test, GetFilename_IsFileInVolumeSubDirectory_ReturnFilename) {
 	const Path path(kTestVolume + LR"(\bar\foo.txt)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"(foo.txt)", filename.c_str());
+	EXPECT_STREQ(L"foo.txt", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_IsDirectoryInRoot_ReturnFilename) {
+TEST_F(Path_Test, GetFilename_IsDirectoryInRoot_ReturnFilename) {
 	const Path path(LR"(Q:\foo)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"(foo)", filename.c_str());
+	EXPECT_STREQ(L"foo", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_IsDirectoryInVolumeRoot_ReturnFilename) {
+TEST_F(Path_Test, GetFilename_IsDirectoryInVolumeRoot_ReturnFilename) {
 	const Path path(kTestVolume + LR"(\foo)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"(foo)", filename.c_str());
+	EXPECT_STREQ(L"foo", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_IsDirectoryInSubDirectory_ReturnFilename) {
+TEST_F(Path_Test, GetFilename_IsDirectoryInSubDirectory_ReturnFilename) {
 	const Path path(LR"(Q:\bar\foo)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"(foo)", filename.c_str());
+	EXPECT_STREQ(L"foo", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_IsDriveRoot_ReturnEmpty) {
+TEST_F(Path_Test, GetFilename_IsDriveRoot_ReturnEmpty) {
 	const Path path(LR"(Q:\)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"()", filename.c_str());
+	EXPECT_STREQ(L"", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_IsVolumeRoot_ReturnEmpty) {
+TEST_F(Path_Test, GetFilename_IsVolumeRoot_ReturnEmpty) {
 	const Path path(kTestVolume + LR"(\)");
 
 	const Filename filename = path.GetFilename();
 
-	EXPECT_STREQ(LR"()", filename.c_str());
+	EXPECT_STREQ(L"", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_ErrorGettingPathBufferSize_ThrowError) {
-	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(LR"(Q:\bar\foo.txt)"), 0, t::_, nullptr))
-		.WillOnce(t::DoDefault())
-		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
-	const Path path(LR"(Q:\bar\foo.txt)");
+TEST_F(Path_Test, GetFilename_IsLong_ReturnEmpty) {
+	const std::wstring name(1024, 'x');
+	const Path path(LR"(Q:\foo\)" + name + LR"(\bar.txt)");
 
-	EXPECT_THROW(path.GetFilename(), m3c::windows_exception);
+	const Filename filename = path.GetFilename();
+
+	EXPECT_STREQ(L"bar.txt", filename.c_str());
 }
 
-TEST_F(PathTest, GetFilename_ErrorGettingPathName_ThrowError) {
+TEST_F(Path_Test, GetFilename_ErrorGettingPath_ThrowError) {
 	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(LR"(Q:\bar\foo.txt)"), t::Gt(0u), t::_, t::NotNull()))
 		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
 	const Path path(LR"(Q:\bar\foo.txt)");
 
+#pragma warning(suppress : 4834)
 	EXPECT_THROW(path.GetFilename(), m3c::windows_exception);
 }
 
-TEST_F(PathTest, ForceDelete_NotExists_ThrowsException) {
+TEST_F(Path_Test, GetFilename_ErrorGettingLongPath_ThrowError) {
+	const std::wstring name(1024, 'x');
+	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(LR"(\\?\Q:\bar\)" + name + L".txt"), t::Gt(0u), t::_, t::NotNull()))
+		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
+	const Path path(LR"(Q:\bar\)" + name + L".txt");
+
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(path.GetFilename(), m3c::windows_exception);
+}
+
+TEST_F(Path_Test, GetFilename_ErrorGettingLongPathData_ThrowError) {
+	const std::wstring name(1024, 'x');
+	EXPECT_CALL(m_win32, GetFullPathNameW(t::StrEq(LR"(\\?\Q:\bar\)" + name + L".txt"), t::Gt(0u), t::_, t::NotNull()))
+		.WillOnce(dtgm::SetLastErrorAndReturn(0, 2048))
+		.WillOnce(dtgm::SetLastErrorAndReturn(ERROR_NOT_SUPPORTED, 0));
+	const Path path(LR"(Q:\bar\)" + name + L".txt");
+
+#pragma warning(suppress : 4834)
+	EXPECT_THROW(path.GetFilename(), m3c::windows_exception);
+}
+
+TEST_F(Path_Test, swap_ValueWithValue_ValueAndValue) {
+	Path path(kTestVolume + LR"(\foo)");
+	Path oth(LR"(Q:\bar)");
+
+	path.swap(oth);
+
+	EXPECT_STREQ(LR"(Q:\bar)", path.c_str());
+	EXPECT_EQ(kTestVolume + LR"(\foo)", oth.c_str());
+}
+
+TEST_F(Path_Test, stdSwap_ValueWithValue_ValueAndValue) {
+	Path path(kTestVolume + LR"(\foo)");
+	Path oth(LR"(Q:\bar)");
+
+	std::swap(path, oth);
+
+	EXPECT_STREQ(LR"(Q:\bar)", path.c_str());
+	EXPECT_EQ(kTestVolume + LR"(\foo)", oth.c_str());
+}
+
+
+TEST_F(Path_Test, stdHash_Value_ReturnHash) {
+	const std::wstring str(LR"(Q:\bar\foo.txt)");
+	const Path path(str);
+	const size_t h = std::hash<Path>{}(path);
+
+	EXPECT_EQ(Path(str).hash(), h);
+}
+
+TEST_F(Path_Test, stdHash_DiffersInCase_HashEquals) {
+	const std::wstring str(LR"(Q:\bar\foo.txt)");
+	const std::wstring oth(LR"(Q:\bar\Foo.txt)");
+	const Path path(str);
+	const Path othPath(oth);
+	const size_t h = std::hash<Path>{}(path);
+	const size_t o = std::hash<Path>{}(othPath);
+
+	ASSERT_TRUE(path == othPath);
+	EXPECT_EQ(o, h);
+}
+
+TEST_F(Path_Test, stdHash_DiffersInCaseWithUmlaut_HashEquals) {
+	const std::wstring str(L"Q:\\bar\\fo\u00F6.txt");
+	const std::wstring oth(L"Q:\\bar\\fo\u00D6.txt");
+	const Path path(str);
+	const Path othPath(oth);
+	const size_t h = std::hash<Path>{}(path);
+	const size_t o = std::hash<Path>{}(othPath);
+
+	ASSERT_TRUE(path == othPath);
+	EXPECT_EQ(o, h);
+}
+
+TEST_F(Path_Test, stdHash_LongValue_ReturnHash) {
+	const std::wstring str(LR"(Q:\bar\)" + std::wstring(MAX_PATH, 'x') + LR"(\foo.txt)");
+	const Path path(str);
+
+	const size_t h = std::hash<Path>{}(path);
+
+	EXPECT_EQ(Path(str).hash(), h);
+}
+
+TEST_F(Path_Test, ForceDelete_NotExists_ThrowsException) {
 	const Path path(kTestVolume + LR"(\foo)");
 	ASSERT_FALSE(path.Exists());
 
 	EXPECT_THROW(path.ForceDelete(), m3c::windows_exception);
 }
 
-TEST_P(PathDeleteTest, ForceDelete_Exists_Delete) {
+TEST_P(Path_DeleteTest, ForceDelete_Exists_Delete) {
 	ASSERT_TRUE(kTempPath.Exists());
 	if (std::get<0>(GetParam()) == Mode::kHardlink) {
 		ASSERT_TRUE(kHardlinkPath.Exists());
@@ -1103,7 +1345,7 @@ TEST_P(PathDeleteTest, ForceDelete_Exists_Delete) {
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorGettingAttributes_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorGettingAttributes_ThrowException) {
 	t::InSequence s;
 	t::MockFunction<void(bool)> check;
 
@@ -1129,7 +1371,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorGettingAttributes_ThrowException) {
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorRemovingReadOnlyAttribute_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorRemovingReadOnlyAttribute_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly)) {
 		SUCCEED();
 		return;
@@ -1159,7 +1401,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorRemovingReadOnlyAttribute_ThrowException
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorDeleting_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorDeleting_ThrowException) {
 	t::InSequence s;
 	t::MockFunction<void(bool)> check;
 	EXPECT_CALL(check, Call(true));
@@ -1190,7 +1432,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorDeleting_ThrowException) {
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorRestoringReadOnlyAttributeAfterDeleteError_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorRestoringReadOnlyAttributeAfterDeleteError_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly)) {
 		SUCCEED();
 		return;
@@ -1231,7 +1473,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorRestoringReadOnlyAttributeAfterDeleteErr
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorFindingFirstNameBufferSize_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorFindingFirstNameBufferSize_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) == Mode::kDirectory) {
 		SUCCEED();
 		return;
@@ -1261,7 +1503,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorFindingFirstNameBufferSize_ThrowExceptio
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorFindingFirstName_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorFindingFirstName_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) == Mode::kDirectory) {
 		SUCCEED();
 		return;
@@ -1291,7 +1533,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorFindingFirstName_ThrowException) {
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorFindingSecondNameBufferSize_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorFindingSecondNameBufferSize_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) == Mode::kDirectory) {
 		SUCCEED();
 		return;
@@ -1321,7 +1563,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorFindingSecondNameBufferSize_ThrowExcepti
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorFindingSecondName_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorFindingSecondName_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
 		SUCCEED();
 		return;
@@ -1351,7 +1593,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorFindingSecondName_ThrowException) {
 	}
 }
 
-TEST_P(PathDeleteTest, DISABLED_ForceDelete_ErrorGettingHardlinkRoot_ThrowException) {
+TEST_P(Path_DeleteTest, DISABLED_ForceDelete_ErrorGettingHardlinkRoot_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
 		SUCCEED();
 		return;
@@ -1382,7 +1624,7 @@ TEST_P(PathDeleteTest, DISABLED_ForceDelete_ErrorGettingHardlinkRoot_ThrowExcept
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorBuildingHardlinkPathForSecondName_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorBuildingHardlinkPathForSecondName_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
 		SUCCEED();
 		return;
@@ -1415,7 +1657,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorBuildingHardlinkPathForSecondName_ThrowE
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForSecondName_Return) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForSecondName_Return) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
 		SUCCEED();
 		return;
@@ -1447,7 +1689,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForSec
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorBuildingHardlinkPathForFirstName_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorBuildingHardlinkPathForFirstName_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
 		SUCCEED();
 		return;
@@ -1478,7 +1720,7 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorBuildingHardlinkPathForFirstName_ThrowEx
 	}
 }
 
-TEST_P(PathDeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForFirstName_Return) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForFirstName_Return) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
 		SUCCEED();
 		return;
@@ -1511,7 +1753,10 @@ TEST_P(PathDeleteTest, ForceDelete_ErrorRestoringHardlinkReadOnlyAttributeForFir
 	}
 }
 
-
-INSTANTIATE_TEST_SUITE_P(Attributes, PathDeleteTest, t::Combine(t::Values(Mode::kDirectory, Mode::kFile, Mode::kHardlink), t::Values(Attributes::kNormal, Attributes::kReadOnly, Attributes::kHidden, Attributes::kSystem, Attributes::kHidden | Attributes::kSystem, Attributes::kReadOnly | Attributes::kHidden | Attributes::kSystem)));
+INSTANTIATE_TEST_SUITE_P(Path_DeleteTest, Path_DeleteTest, t::Combine(t::Values(Mode::kDirectory, Mode::kFile, Mode::kHardlink), t::Values(Attributes::kNormal, Attributes::kReadOnly, Attributes::kHidden, Attributes::kSystem, Attributes::kHidden | Attributes::kSystem, Attributes::kReadOnly | Attributes::kHidden | Attributes::kSystem)), [](const t::TestParamInfo<Path_DeleteTest::ParamType> &param) {
+	std::string attributes = t::PrintToString(std::get<1>(param.param));
+	attributes.erase(std::remove(attributes.begin(), attributes.end(), '+'));
+	return fmt::format("{:03}_{}_{}", param.index, t::PrintToString(std::get<0>(param.param)), attributes);
+});
 
 }  // namespace systools::test

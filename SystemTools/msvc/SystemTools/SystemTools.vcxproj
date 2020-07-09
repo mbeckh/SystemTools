@@ -34,6 +34,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\src\BackupStrategy.cpp" />
     <ClCompile Include="..\..\src\DirectoryScanner.cpp" />
     <ClCompile Include="..\..\src\Backup.cpp" />
     <ClCompile Include="..\..\src\FileComparer.cpp" />
@@ -42,12 +43,19 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\systools\Backup.h" />
+    <ClInclude Include="..\..\include\systools\BackupStrategy.h" />
     <ClInclude Include="..\..\include\systools\DirectoryScanner.h" />
     <ClInclude Include="..\..\include\systools\FileComparer.h" />
     <ClInclude Include="..\..\include\systools\Path.h" />
-    <ClInclude Include="..\..\include\systools\ThreadPool.h" />
     <ClInclude Include="..\..\include\systools\ThreeWayMerge.h" />
     <ClInclude Include="..\..\include\systools\Volume.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\..\.clang-format" />
+    <None Include="..\..\..\.clang-tidy" />
+    <None Include="..\..\..\.codacy.yml" />
+    <None Include="..\..\..\.editorconfig" />
+    <None Include="..\..\..\.github\workflows\build.yml" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

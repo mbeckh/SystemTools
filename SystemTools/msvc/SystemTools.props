@@ -11,7 +11,7 @@
       <AdditionalIncludeDirectories Condition="'$(ProjectGuid)'=='{12793101-18F9-4E2E-BEE9-9FBB1C4209DF}'">$(SystemToolsDirectory)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>pathcch.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;pathcch.lib;shell32.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(ProjectGuid)'!='{12793101-18F9-4E2E-BEE9-9FBB1C4209DF}'">$(MSBuildThisFileName)_$(PlatformShortName)$(DebugSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>

@@ -2,6 +2,7 @@
 
 #include <m3c/mutex.h>
 
+#include <atomic>
 #include <thread>
 
 
@@ -11,10 +12,7 @@ class Path;
 
 class FileComparer {
 private:
-	enum class State : std::uint_fast8_t { kIdle = 1,
-										   kRunning = 2,
-										   kAbort = 4,
-										   kShutdown = 8 };
+	enum class State : std::uint_fast8_t;
 
 	struct Context;
 
@@ -37,7 +35,7 @@ private:
 	m3c::mutex m_mutex;
 	m3c::condition_variable m_clients;
 	m3c::condition_variable m_master;
-	std::atomic<State> m_state[2] = {State::kIdle, State::kIdle};
+	std::atomic<State> m_state[2];
 	std::thread m_thread[2];
 };
 

@@ -1,10 +1,11 @@
 #include "systools/FileComparer.h"
 
-#include <m3c/Handle.h>
+#include <m3c/handle.h>
 
 #include <systools/Path.h>
 #include <systools/Volume.h>
 
+#include <atomic>
 #include <limits>
 #include <numeric>
 
@@ -17,6 +18,11 @@ constexpr std::uint32_t kThreadDone = 0xFFFFFFFF;
 
 }  // namespace
 
+enum class FileComparer::State : std::uint_fast8_t { kIdle = 1,
+													 kRunning = 2,
+													 kAbort = 4,
+													 kShutdown = 8 };
+
 struct FileComparer::Context {
 	const std::uint_fast32_t bufferSize;
 	const Path* path[2];
@@ -26,7 +32,8 @@ struct FileComparer::Context {
 };
 
 FileComparer::FileComparer()
-	: m_thread{std::thread(
+	: m_state{State::kIdle, State::kIdle}
+	, m_thread{std::thread(
 				   [](FileComparer* const pComparer) noexcept {
 					   pComparer->Run(0);
 				   }  // namespace systools
@@ -65,7 +72,7 @@ bool FileComparer::Compare(const Path& src, const Path& cpy) {
 	assert(m_state[1].load(std::memory_order_acquire) == State::kIdle);
 
 	//
-	// set up the buffer with propert alignment
+	// set up the buffer with property alignment
 
 	Volume srcVolume(src);
 	Volume cpyVolume(cpy);
@@ -77,10 +84,10 @@ bool FileComparer::Compare(const Path& src, const Path& cpy) {
 	const std::uint_fast32_t bufferSize = static_cast<std::uint32_t>(kTargetBufferSize / chunkSize) * chunkSize;
 	const std::size_t allocationSize = static_cast<std::size_t>(bufferSize) * 2;
 
-	const auto srcDeleter = [ allocationSize, srcAlignment ](void* const p) noexcept {
+	const auto srcDeleter = [allocationSize, srcAlignment](void* const p) noexcept {
 		operator delete[](p, allocationSize, srcAlignment);
 	};
-	const auto cpyDeleter = [ allocationSize, cpyAlignment ](void* const p) noexcept {
+	const auto cpyDeleter = [allocationSize, cpyAlignment](void* const p) noexcept {
 		operator delete[](p, allocationSize, cpyAlignment);
 	};
 	const std::unique_ptr<std::byte[], decltype(srcDeleter)> srcBuffer(static_cast<std::byte*>(operator new[](allocationSize, srcAlignment)), srcDeleter);
@@ -241,7 +248,7 @@ void FileComparer::Run(const std::uint_fast8_t index) noexcept {
 void FileComparer::ReadFileContent(const std::uint_fast8_t index) noexcept {
 	std::uint_fast8_t writeIndex = 0;
 	try {
-		const m3c::Handle hFile = CreateFileW(m_pContext->path[index]->c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, nullptr);
+		const m3c::handle hFile = CreateFileW(m_pContext->path[index]->c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, nullptr);
 		if (!hFile) {
 			THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", m_pContext->path[index]);
 		}

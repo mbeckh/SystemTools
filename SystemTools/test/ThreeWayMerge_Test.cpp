@@ -31,50 +31,68 @@ bool operator==(const Match& lhs, const Match& rhs) noexcept {
 	return lhs.src == rhs.src && lhs.ref == rhs.ref && lhs.dst == rhs.dst;
 }
 
+void PrintTo(const Match& match, std::ostream* const os) {
+	if (match.src.has_value()) {
+		*os << "(" << *match.src << "/";
+	} else {
+		*os << "(-/";
+	}
+	if (match.ref.has_value()) {
+		*os << *match.ref << "/";
+	} else {
+		*os << "-/";
+	}
+	if (match.dst.has_value()) {
+		*os << *match.dst << "/)";
+	} else {
+		*os << "-/)";
+	}
+}
+
 int Compare(const int& lhs, const int& rhs) noexcept {
 	return lhs - rhs;
 }
 
-TEST(ThreeWayMerge, call_Values_ReturnResult) {
-	std::vector<int> src{3, 1, 4};
-	std::vector<int> ref{5, 4, 1};
-	std::vector<int> dst{4, 2, 5, 3};
+TEST(ThreeWayMerge_Test, call_Values_ReturnResult) {
+	std::vector<int> src{3, 1, 4, 0};
+	std::vector<int> ref{5, 4, 7, 8, 1};
+	std::vector<int> dst{4, 2, 5, 3, 8, 9};
 
 	std::vector<Match> copy;
-	std::vector<Match> stale;
+	std::vector<Match> extra;
 
-	ThreeWayMerge(src, ref, dst, copy, stale, Compare);
+	ThreeWayMerge(src, ref, dst, copy, extra, Compare);
 
-	EXPECT_THAT(copy, t::ElementsAre(Match{1, 1, std::nullopt}, Match{3, std::nullopt, 3}, Match{4, 4, 4}));
-	EXPECT_THAT(stale, t::ElementsAre(Match{std::nullopt, std::nullopt, 2}, Match{std::nullopt, std::nullopt, 5}));
+	EXPECT_THAT(copy, t::ElementsAre(Match{0, std::nullopt, std::nullopt}, Match{1, 1, std::nullopt}, Match{3, std::nullopt, 3}, Match{4, 4, 4}));
+	EXPECT_THAT(extra, t::ElementsAre(Match{std::nullopt, std::nullopt, 2}, Match{std::nullopt, std::nullopt, 5}, Match{std::nullopt, std::nullopt, 8}, Match{std::nullopt, std::nullopt, 9}));
 }
 
-TEST(ThreeWayMerge, call_CompareThrows_ThrowException) {
-	std::vector<int> src{3, 1, 4};
-	std::vector<int> ref{5, 4, 1};
-	std::vector<int> dst{4, 2, 5, 3};
+TEST(ThreeWayMerge_Test, call_CompareThrows_ThrowException) {
+	std::vector<int> src{3, 1, 4, 0};
+	std::vector<int> ref{5, 4, 7, 8, 1};
+	std::vector<int> dst{4, 2, 5, 3, 8, 9};
 
 	std::vector<Match> copy;
-	std::vector<Match> stale;
+	std::vector<Match> extra;
 
-	EXPECT_THROW(ThreeWayMerge(src, ref, dst, copy, stale, [](const int&, const int&) -> int {
+	EXPECT_THROW(ThreeWayMerge(src, ref, dst, copy, extra, [](const int&, const int&) -> int {
 					 throw std::exception();
 				 }),
 				 std::exception);
 }
 
-TEST(ThreeWayMerge, call_Empty_ReturnEmpty) {
+TEST(ThreeWayMerge_Test, call_Empty_ReturnEmpty) {
 	std::vector<int> src;
 	std::vector<int> ref;
 	std::vector<int> dst;
 
 	std::vector<Match> copy;
-	std::vector<Match> stale;
+	std::vector<Match> extra;
 
-	ThreeWayMerge(src, ref, dst, copy, stale, Compare);
+	ThreeWayMerge(src, ref, dst, copy, extra, Compare);
 
 	EXPECT_THAT(copy, t::IsEmpty());
-	EXPECT_THAT(stale, t::IsEmpty());
+	EXPECT_THAT(extra, t::IsEmpty());
 }
 
 }  // namespace systools::test

@@ -1,34 +1,83 @@
 #include "systools/Backup.h"
 
+#include "systools/BackupStrategy.h"
 #include "systools/DirectoryScanner.h"
 #include "systools/Path.h"
 #include "systools/ThreeWayMerge.h"
 
 #include <llamalog/llamalog.h>
-#include <m3c/com_ptr.h>
 #include <m3c/exception.h>
+#include <m3c/finally.h>
+#include <m3c/handle.h>
 
-#include <shellapi.h>
-#include <shobjidl.h>
+#include <aclapi.h>
 #include <windows.h>
 
 #include <algorithm>
 #include <cassert>
 #include <compare>
 #include <optional>
+#include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
 
 namespace systools {
 
-struct Backup::Match {
-	Match(std::optional<DirectoryScanner::Entry> src, std::optional<DirectoryScanner::Entry> ref, std::optional<DirectoryScanner::Entry> dst) noexcept
+namespace {
+
+int CompareName(const ScannedFile& lhs, const ScannedFile& rhs) {
+	// attributes are always updated for directories
+	const std::weak_ordering cmp = lhs.GetName() <=> rhs.GetName();
+	return cmp < 0 ? -1 : cmp == 0 ? 0 : 1;
+}
+
+bool SameAttributes(const ScannedFile& lhs, const ScannedFile& rhs) {
+	if (lhs.GetLastWriteTime() != rhs.GetLastWriteTime()
+		|| lhs.GetSize() != rhs.GetSize()
+		|| (lhs.GetAttributes() & BackupStrategy::kCopyAttributeMask) != (rhs.GetAttributes() & BackupStrategy::kCopyAttributeMask)
+		// check creation time last because it rarely changes
+		|| lhs.GetCreationTime() != rhs.GetCreationTime()) {
+		return false;
+	}
+
+	return lhs.GetStreams() == rhs.GetStreams();
+}
+
+bool SameSecurity(const ScannedFile& lhs, const ScannedFile& rhs) {
+	return lhs.GetSecurity() == rhs.GetSecurity();
+}
+
+constexpr std::size_t max_difference_0(const std::size_t a, const std::size_t b) noexcept {
+	return a > b ? a - b : 0;
+}
+
+void WaitForScanNoThrow(BackupStrategy& strategy, DirectoryScanner& scanner) noexcept {
+	try {
+		// if no operation is currently in progress, wait just happily returns
+		strategy.WaitForScan(scanner);
+	} catch (const std::exception& e) {
+		// dtor has nothrow requirement
+		SLOG_ERROR("WaitForScan: {}", e);
+	} catch (...) {
+		SLOG_ERROR("WaitForScan");
+	}
+}
+
+}  // namespace
+
+
+struct Backup::Match final {
+	Match(std::optional<ScannedFile> src, std::optional<ScannedFile> ref, std::optional<ScannedFile> dst) noexcept
 		: src(std::move(src))
 		, ref(std::move(ref))
 		, dst(std::move(dst)) {
-		assert(!src.has_value() || !ref.has_value() || src->name == ref->name);
-		assert(!src.has_value() || !dst.has_value() || src->name == dst->name);
-		assert(!ref.has_value() || !dst.has_value() || ref->name == dst->name);
+		assert(!src.has_value() || !ref.has_value() || src->GetName() == ref->GetName());
+		assert(!src.has_value() || !dst.has_value() || src->GetName() == dst->GetName());
+		assert(!src.has_value() || !dst.has_value() || src->GetName() == dst->GetName());
+		assert(!ref.has_value() || !dst.has_value() || ref->GetName() == dst->GetName());
 	}
 	Match(const Match& match) = default;
 	Match(Match&& match) noexcept = default;
@@ -37,199 +86,251 @@ struct Backup::Match {
 	Match& operator=(const Match& match) = default;
 	Match& operator=(Match&& match) noexcept = default;
 
-	std::optional<DirectoryScanner::Entry> src;
-	std::optional<DirectoryScanner::Entry> ref;
-	std::optional<DirectoryScanner::Entry> dst;
+	std::optional<ScannedFile> src;
+	std::optional<ScannedFile> ref;
+	std::optional<ScannedFile> dst;
 };
 
-namespace {
 
-constexpr DWORD kCopyAttributeMask = FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_COMPRESSED | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED | FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM;
-constexpr DWORD kUnsupportedAttributesMask = FILE_ATTRIBUTE_ENCRYPTED | FILE_ATTRIBUTE_OFFLINE | FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_SPARSE_FILE;
+std::uint64_t Backup::Statistics::GetFolders() const noexcept {
+	return m_added.GetFolders() + m_updated.GetFolders() + m_retained.GetFolders();
+}
+std::uint64_t Backup::Statistics::GetFiles() const noexcept {
+	return m_added.GetFiles() + m_updated.GetFiles() + m_retained.GetFiles();
+}
 
-void EnsurePathExists(const Path& path) {
-	if (path.Exists()) {
-		return;
-	}
-	EnsurePathExists(path.GetParent());
-	if (!CreateDirectoryW(path.c_str(), nullptr)) {
-		THROW(m3c::windows_exception(GetLastError()), "CreateDirectoryW", path);
+std::uint64_t Backup::Statistics::GetBytesTotal() const noexcept {
+	return m_added.GetSize() + m_updated.GetSize() + m_retained.GetSize();
+}
+
+std::uint64_t Backup::Statistics::GetBytesInHardLinks() const noexcept {
+	return m_bytesInHardLinks;
+}
+
+std::uint64_t Backup::Statistics::GetBytesCopied() const noexcept {
+	return m_bytesCopied;
+}
+
+std::uint64_t Backup::Statistics::GetBytesCreatedInHardLinks() const noexcept {
+	return m_bytesCreatedInHardLinks;
+}
+
+void Backup::Statistics::OnAdd(const Match& match) {
+	OnEvent(m_added, *match.src);
+}
+
+void Backup::Statistics::OnUpdate(const Match& match) {
+	OnEvent(m_updated, *match.src);
+
+	if (!match.src->IsDirectory() && match.ref.has_value() && match.dst.has_value() && match.ref->IsHardLink(*match.dst)) {
+		m_bytesInHardLinks += match.dst->GetSize();
 	}
 }
 
-std::optional<DirectoryScanner::Entry> CreateEntry(const Path& path) {
-	std::optional<DirectoryScanner::Entry> result;
+void Backup::Statistics::OnRetain(const Match& match) {
+	OnEvent(m_retained, *match.src);
 
-	const m3c::Handle hFile = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_READ_DATA | FILE_READ_EA, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-	if (!hFile) {
-		if (const DWORD lastError = GetLastError(); lastError != ERROR_FILE_NOT_FOUND && lastError != ERROR_PATH_NOT_FOUND) {
-			THROW(m3c::windows_exception(lastError), "CreateFile {}", path);
+	if (!match.src->IsDirectory() && match.ref.has_value() && match.dst.has_value() && match.ref->IsHardLink(*match.dst)) {
+		m_bytesInHardLinks += match.dst->GetSize();
+	}
+}
+
+void Backup::Statistics::OnRemove(const Match& match) {
+	OnEvent(m_removed, *match.dst);
+}
+
+void Backup::Statistics::OnReplace(const Match& match) {
+	OnEvent(m_replaced, *match.dst);
+	OnEvent(m_updated, *match.src);  // do NOT count the hard link sizes here because they are from the OLD file!
+}
+
+void Backup::Statistics::OnSecurityUpdate(const Match& match) {
+	OnEvent(m_securityUpdated, *match.src);
+}
+
+void Backup::Statistics::OnCopy(const std::uint64_t bytes) {
+	m_bytesCopied += bytes;
+}
+
+void Backup::Statistics::OnHardLink(const std::uint64_t bytes) {
+	m_bytesInHardLinks += bytes;
+	m_bytesCreatedInHardLinks += bytes;
+}
+
+void Backup::Statistics::OnEvent(Entry& entry, const ScannedFile& file) {
+	if (file.IsDirectory()) {
+		++entry.m_folders;
+	} else {
+		++entry.m_files;
+		entry.m_size += file.GetSize();
+	}
+}
+
+
+Backup::Backup(BackupStrategy& strategy) noexcept
+	: m_strategy(strategy) {
+	// empty
+}
+
+Backup::Statistics Backup::CreateBackup(const std::vector<Path>& src, const Path& ref, const Path& dst) {
+	{
+		TOKEN_PRIVILEGES privileges;
+		privileges.PrivilegeCount = 1;
+		if (!LookupPrivilegeValueW(nullptr, SE_SECURITY_NAME, &privileges.Privileges->Luid)) {
+			THROW(m3c::windows_exception(GetLastError()), "LookupPrivilegeValueW");
 		}
-		return result;
-	}
-	FILE_STANDARD_INFO fileStandardInfo;
-	if (!GetFileInformationByHandleEx(hFile, FileStandardInfo, &fileStandardInfo, sizeof(fileStandardInfo))) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFileInformationByHandleEx {}", path);
-	}
-	if (!fileStandardInfo.Directory) {
-		THROW(std::exception(), "{} is not a directory", path);
-	}
+		privileges.Privileges->Attributes = SE_PRIVILEGE_ENABLED;
 
-	FILE_BASIC_INFO fileBasicInfo;
-	if (!GetFileInformationByHandleEx(hFile, FileBasicInfo, &fileBasicInfo, sizeof(fileBasicInfo))) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFileInformationByHandleEx {}", path);
-	}
-	if (fileBasicInfo.FileAttributes & kUnsupportedAttributesMask) {
-		THROW(std::exception(), "directory has unsupported attributes {}: {}", fileBasicInfo.FileAttributes, path);
-	}
-
-	FILE_ID_INFO fileIdInfo;
-	if (!GetFileInformationByHandleEx(hFile, FileIdInfo, &fileIdInfo, sizeof(fileIdInfo))) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFileInformationByHandleEx {}", path);
-	}
-
-	// get the file name to have proper capitalization
-	std::wstring name;
-	const DWORD size = GetFinalPathNameByHandleW(hFile, name.data(), 0, FILE_NAME_NORMALIZED | VOLUME_NAME_NONE);
-	if (!size) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFinalPathNameByHandle {}", path);
-	}
-	name.resize(size);
-	const DWORD len = GetFinalPathNameByHandleW(hFile, name.data(), size, FILE_NAME_NORMALIZED | VOLUME_NAME_NONE);
-	if (!len) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFinalPathNameByHandle {}", path);
-	}
-	if (len != size - 1) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFinalPathNameByHandle {}", path);
-	}
-	name.resize(len);
-
-	const std::size_t pos = name.rfind('\\', len);
-	if (pos == std::wstring::npos || pos >= name.size() - 1) {
-		THROW(std::exception(), "invalid path for {}: {}", path, name);
-	}
-	const Filename filename(name.substr(name.rfind('\\') + 1));
-	result.emplace(filename, fileStandardInfo.EndOfFile, fileBasicInfo.CreationTime, fileBasicInfo.LastWriteTime, fileBasicInfo.FileAttributes, fileIdInfo.FileId);
-	return result;
-}
-
-int CompareDirectoryEntries(const DirectoryScanner::Entry& e0, const DirectoryScanner::Entry& e1) {
-	// attributes are always updated for directories
-	return e0.name.CompareTo(e1.name);
-};
-
-int CompareFileEntries(const DirectoryScanner::Entry& e0, const DirectoryScanner::Entry& e1) {
-	// first check if same file
-	if (const int cmp = e0.name.CompareTo(e1.name); cmp) {
-		return cmp;
-	}
-
-	// then check values first that change when file is modified
-	if (e0.lastWriteTime < e1.lastWriteTime) {
-		return -1;
-	}
-	if (e0.lastWriteTime > e1.lastWriteTime) {
-		return 1;
-	}
-	if (e0.size < e1.size) {
-		return -1;
-	}
-	if (e0.size > e1.size) {
-		return 1;
-	}
-	if ((e0.attributes & kCopyAttributeMask) < (e1.attributes & kCopyAttributeMask)) {
-		return -1;
-	}
-	if ((e0.attributes & kCopyAttributeMask) > (e1.attributes & kCopyAttributeMask)) {
-		return 1;
-	}
-	// check creation time last because it rarely changes
-	if (e0.creationTime < e1.creationTime) {
-		return -1;
-	}
-	if (e0.creationTime > e1.creationTime) {
-		return 1;
-	}
-	return 0;
-};
-
-void Rename(const Path& existingName, const Path& newName) {
-	if (!MoveFileExW(existingName.c_str(), newName.c_str(), 0)) {
-		if (const DWORD lastError = GetLastError(); lastError != ERROR_ACCESS_DENIED) {
-			THROW(m3c::windows_exception(lastError), "MoveFileEx {} to {}", existingName, newName);
+		HANDLE handle;
+		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &handle)) {
+			THROW(m3c::windows_exception(GetLastError()), "OpenProcessToken");
 		}
-		m3c::com_ptr<IShellItem> item;
-#pragma comment(lib, "shell32.lib")
-		COM_HR(SHCreateItemFromParsingName(existingName.c_str(), nullptr, __uuidof(IShellItem), (void**) &item), "SHCreateItemFromParsingName {}", existingName);
-		m3c::com_ptr<IFileOperation> fo;
-		COM_HR(CoCreateInstance(__uuidof(FileOperation), nullptr, CLSCTX_ALL, __uuidof(IFileOperation), (void**) &fo), "CoCreateInstance");
-		COM_HR(fo->SetOperationFlags(FOF_NO_UI), "SetOperationFlags");
-		const Filename filename = newName.GetFilename();
-		COM_HR(fo->RenameItem(item.get(), filename.c_str(), nullptr), "RenameItem {} to {}", existingName, filename);
-		COM_HR(fo->PerformOperations(), "PerformOperations");
-	}
-}
 
-void CopyAttributesAndTimestamps(const DirectoryScanner::Entry& src, const Path& dst) {
-	const m3c::Handle hDst = CreateFileW(dst.c_str(), FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-	if (!hDst) {
-		THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", dst);
+		m3c::handle hToken(handle);
+		const BOOL result = AdjustTokenPrivileges(hToken, FALSE, &privileges, 0, nullptr, nullptr);
+		const DWORD lastError = GetLastError();
+		if (!result || lastError != ERROR_SUCCESS) {
+			THROW(m3c::windows_exception(lastError), "AdjustTokenPrivileges");
+		}
 	}
 
-	FILE_BASIC_INFO fileBasicInfo;
-	if (!GetFileInformationByHandleEx(hDst, FileBasicInfo, &fileBasicInfo, sizeof(fileBasicInfo))) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFileInformationByHandleEx {}", dst);
+	// reset statistics
+	m_statistics = Statistics();
+	if (src.empty()) {
+		// nothing to do
+		return m_statistics;
 	}
 
-	if (fileBasicInfo.LastWriteTime.QuadPart == src.lastWriteTime && fileBasicInfo.CreationTime.QuadPart == src.creationTime && (fileBasicInfo.FileAttributes & kCopyAttributeMask) == (src.attributes & kCopyAttributeMask)) {
-		return;
-	}
+	// TODO: root folder
+	// TODO: ref and dst must be on same value
 
-	LOG_DEBUG("Copy attributes and timestamp from source to {}", dst);
-
-	// set any missing attributes
-	fileBasicInfo.FileAttributes |= (src.attributes & kCopyAttributeMask);
-	// remove unset attributes, but retain attributes which are not copied
-	fileBasicInfo.FileAttributes &= (src.attributes | ~kCopyAttributeMask);
-
-	fileBasicInfo.CreationTime.QuadPart = src.creationTime;
-	fileBasicInfo.LastWriteTime.QuadPart = src.lastWriteTime;
-
-	if (!SetFileInformationByHandle(hDst, FileBasicInfo, &fileBasicInfo, sizeof(fileBasicInfo))) {
-		THROW(m3c::windows_exception(GetLastError()), "SetFileInformationByHandle {}", dst);
-	}
-}
-
-}  // namespace
-
-void Backup::CompareDirectories(const std::vector<Path>& src, const Path& ref, const Path& dst) {
+	// group source folders by path
+	std::unordered_map<Path, std::unordered_set<Filename>> srcPaths;
+	std::unordered_set<Filename> allsrcFilenames;
 	for (std::size_t index = 0, max = src.size(); index < max; ++index) {
-		if (src[index].Exists() && !src[index].IsDirectory()) {
-			THROW(std::exception(), "{} is not a directory", src[index]);
+		const Path& srcPath = src[index];
+		// src folders MUST exist
+		if (!m_strategy.Exists(srcPath) || !m_strategy.IsDirectory(srcPath)) {
+			THROW(std::exception(), "{} is not a directory", srcPath);
 		}
+
+		const Path parent = srcPath.GetParent();
+		Filename filename = srcPath.GetFilename();
+		assert(!filename.sv().empty());
+
+		// source folders names MUST be unique
+		const auto result = allsrcFilenames.insert(filename);
+		if (!result.second) {
+			THROW(std::exception(), "{} and {} have the same name", srcPath, parent / *result.first);
+		}
+		srcPaths[parent].insert(std::move(filename));
 	}
-	if (ref.Exists() && !ref.IsDirectory()) {
+
+	// ref and dst folders MAY exist
+
+	const bool refExists = m_strategy.Exists(ref);
+	if (refExists && !m_strategy.IsDirectory(ref)) {
 		THROW(std::exception(), "{} is not a directory", ref);
 	}
-	if (dst.Exists() && !dst.IsDirectory()) {
+	const bool dstExists = m_strategy.Exists(dst);
+	if (dstExists && !m_strategy.IsDirectory(dst)) {
 		THROW(std::exception(), "{} is not a directory", dst);
 	}
 
-	EnsurePathExists(dst);
+	// get matching contents of ref and dst folders
+	DirectoryScanner::Result refDirectories;
+	DirectoryScanner::Result refFiles;
+	DirectoryScanner::Result dstDirectories;
+	DirectoryScanner::Result dstFiles;
+	const LambdaScannerFilter refdstFilter([&allsrcFilenames](const Filename& name) {
+		return allsrcFilenames.contains(name);
+	});
 
-	for (std::size_t index = 0, max = src.size(); index < max; ++index) {
-		const Path srcPath = src[index].GetParent();
+	// Ensure that all asynchronous operations on local variables are finished before stack unwind
+	const auto waitForAsync = m3c::finally([this]() noexcept {
+		WaitForScanNoThrow(m_strategy, m_refScanner);
+		WaitForScanNoThrow(m_strategy, m_dstScanner);
+	});
 
-		std::optional<DirectoryScanner::Entry> srcEntry = CreateEntry(src[index]);
-		std::optional<DirectoryScanner::Entry> refEntry = CreateEntry(ref / srcEntry->name);
-		std::optional<DirectoryScanner::Entry> dstEntry = CreateEntry(dst / srcEntry->name);
-
-		const Match match = {std::move(srcEntry), std::move(refEntry), std::move(dstEntry)};
-		CompareDirectories(srcPath, ref, dst, {match});
+	if (refExists) {
+		refDirectories.reserve(allsrcFilenames.size());
+		m_strategy.Scan(ref, m_refScanner, refDirectories, refFiles, DirectoryScanner::Flags::kDefault, refdstFilter);
 	}
+	if (dstExists) {
+		dstDirectories.reserve(allsrcFilenames.size());
+		m_strategy.Scan(dst, m_dstScanner, dstDirectories, dstFiles, DirectoryScanner::Flags::kFolderSecurity, refdstFilter);
+	}
+
+	for (auto it = srcPaths.cbegin(), begin = it, end = srcPaths.cend(); it != end; ++it) {
+		const Path& srcParentPath = it->first;
+		const std::unordered_set<Filename>& filenames = it->second;
+
+		DirectoryScanner::Result srcDirectories;
+		DirectoryScanner::Result srcFiles;
+		const LambdaScannerFilter srcFilter([filenames](const Filename& name) {
+			return filenames.contains(name);
+		});
+		// different scope for containers, thus a second wait
+		const auto waitForAsyncSrc = m3c::finally([this]() noexcept {
+			WaitForScanNoThrow(m_strategy, m_srcScanner);
+		});
+
+		m_strategy.Scan(srcParentPath, m_srcScanner, srcDirectories, srcFiles, DirectoryScanner::Flags::kFolderStreams | DirectoryScanner::Flags::kFolderSecurity, srcFilter);
+
+		// check ref and dst on first iteration
+		if (it == begin) {
+			if (refExists) {
+				m_strategy.WaitForScan(m_refScanner);
+				if (!refFiles.empty()) {
+					THROW(std::exception(), "{} is not a directory", ref / refFiles.cbegin()->GetName());
+				}
+			}
+			if (dstExists) {
+				m_strategy.WaitForScan(m_dstScanner);
+				if (!dstFiles.empty()) {
+					THROW(std::exception(), "{} is not a directory", dst / dstFiles.cbegin()->GetName());
+				}
+			} else {
+				// create destination directory on first iteration if required
+				m_strategy.CreateDirectoryRecursive(dst);
+				// do NOT count for statistics
+			}
+		}
+		m_strategy.WaitForScan(m_srcScanner);
+		if (!srcFiles.empty()) {
+			// should NEVER happen because it was already checked earlier
+			assert(false);
+			THROW(std::exception(), "{} is not a directory", srcParentPath / srcFiles.cbegin()->GetName());
+		}
+		if (srcDirectories.size() != filenames.size()) {
+			// should NEVER happen because it was already checked earlier
+			assert(false);
+			THROW(std::exception(), "Something went wrong for folders in {}", srcParentPath);
+		}
+
+		std::vector<Match> copy;
+		std::vector<Match> extra;
+		copy.reserve(srcDirectories.size());
+		extra.reserve(max_difference_0(dstDirectories.size(), srcDirectories.size()));
+		ThreeWayMerge(srcDirectories, refDirectories, dstDirectories, copy, extra, CompareName);
+		if (copy.size() != filenames.size() || std::any_of(copy.cbegin(), copy.cend(), [](const Match& match) noexcept {
+				return !match.src.has_value();
+			})) {
+			// should NEVER happen
+			assert(false);
+			THROW(std::exception(), "Something went wrong for folders in {}", srcParentPath);
+		}
+		CopyDirectories(srcParentPath, ref, dst, copy);
+	}
+
+	return m_statistics;
 }
 
-void Backup::CompareDirectories(const std::optional<Path>& optionalSrc, const std::optional<Path>& optionalRef, const Path& dst, const std::vector<Match>& directories) {
+void Backup::CopyDirectories(const std::optional<Path>& optionalSrc, const std::optional<Path>& optionalRef, const Path& dst, const std::vector<Match>& directories) {
+	assert(!directories.empty());
+	constexpr std::size_t kReserveDirectories = 64;
+	constexpr std::size_t kReserveFiles = 256;
+
 	std::optional<std::size_t> idx[2];
 
 	std::optional<Path> srcPath[2];
@@ -245,10 +346,17 @@ void Backup::CompareDirectories(const std::optional<Path>& optionalSrc, const st
 	DirectoryScanner::Result refFiles[2];
 	DirectoryScanner::Result dstFiles[2];
 
+	// Ensure that all asynchronous operations on local variables are finished before stack unwind
+	const auto waitForAsync = m3c::finally([this]() noexcept {
+		WaitForScanNoThrow(m_strategy, m_srcScanner);
+		WaitForScanNoThrow(m_strategy, m_refScanner);
+		WaitForScanNoThrow(m_strategy, m_dstScanner);
+	});
+
 	// loop requires one iteration more then directories.size()!
-	for (std::size_t index = 0, max = directories.size(); index <= max; ++index) {
+	for (std::size_t index = 0, maxIndex = directories.size(); index <= maxIndex; ++index) {
 		// scan next directory
-		if (index < max) {
+		if (index < maxIndex) {
 			const std::uint_fast8_t scanIndex = index & 1;
 			assert(!idx[scanIndex].has_value());
 
@@ -270,35 +378,47 @@ void Backup::CompareDirectories(const std::optional<Path>& optionalSrc, const st
 
 			if (match.src.has_value()) {
 				assert(optionalSrc.has_value());
-				srcPath[scanIndex] = *optionalSrc / match.src->name;
-				dstTargetPath[scanIndex] = dst / match.src->name;
-				if (match.src->attributes & kUnsupportedAttributesMask) {
-					THROW(std::exception(), "Directory has unsupported attributes {}: {}", match.src->attributes, *srcPath[scanIndex]);
+				srcPath[scanIndex] = *optionalSrc / match.src->GetName();
+				dstTargetPath[scanIndex] = dst / match.src->GetName();
+				if (match.src->GetAttributes() & BackupStrategy::kUnsupportedAttributesMask) {
+					THROW(std::exception(), "Directory has unsupported attributes {}: {}", match.src->GetAttributes(), *srcPath[scanIndex]);
 				}
-				m_srcScanner.Scan(*srcPath[scanIndex], srcDirectories[scanIndex], srcFiles[scanIndex]);
+
+				srcDirectories[scanIndex].reserve(kReserveDirectories);
+				srcFiles[scanIndex].reserve(kReserveFiles);
+				m_strategy.Scan(*srcPath[scanIndex], m_srcScanner, srcDirectories[scanIndex], srcFiles[scanIndex],
+								DirectoryScanner::Flags::kFolderSecurity | (m_fileSecurity ? DirectoryScanner::Flags::kFileSecurity : DirectoryScanner::Flags::kDefault) | DirectoryScanner::Flags::kFolderStreams, kAcceptAllScannerFilter);
 			}
 			if (match.ref.has_value()) {
 				assert(optionalRef.has_value());
-				refPath[scanIndex] = *optionalRef / match.ref->name;
-				if (match.ref->attributes & kUnsupportedAttributesMask) {
-					THROW(std::exception(), "Directory has unsupported attributes {}: {}", match.ref->attributes, *refPath[scanIndex]);
+				refPath[scanIndex] = *optionalRef / match.ref->GetName();
+				if (match.ref->GetAttributes() & BackupStrategy::kUnsupportedAttributesMask) {
+					THROW(std::exception(), "Directory has unsupported attributes {}: {}", match.ref->GetAttributes(), *refPath[scanIndex]);
 				}
-				m_refScanner.Scan(*refPath[scanIndex], refDirectories[scanIndex], refFiles[scanIndex]);
+
+				refDirectories[scanIndex].reserve(kReserveDirectories);
+				refFiles[scanIndex].reserve(kReserveFiles);
+				m_strategy.Scan(*refPath[scanIndex], m_refScanner, refDirectories[scanIndex], refFiles[scanIndex],
+								m_fileSecurity ? DirectoryScanner::Flags::kFileSecurity : DirectoryScanner::Flags::kDefault, kAcceptAllScannerFilter);
 			}
 			if (match.dst.has_value()) {
-				dstPath[scanIndex] = dst / match.dst->name;
-				if (match.dst->attributes & kUnsupportedAttributesMask) {
-					THROW(std::exception(), "Directory has unsupported attributes {}: {}", match.dst->attributes, *dstPath[scanIndex]);
+				dstPath[scanIndex] = dst / match.dst->GetName();
+				if (match.dst->GetAttributes() & BackupStrategy::kUnsupportedAttributesMask) {
+					THROW(std::exception(), "Directory has unsupported attributes {}: {}", match.dst->GetAttributes(), *dstPath[scanIndex]);
 				}
-				m_dstScanner.Scan(*dstPath[scanIndex], dstDirectories[scanIndex], dstFiles[scanIndex]);
+
+				dstDirectories[scanIndex].reserve(kReserveDirectories);
+				dstFiles[scanIndex].reserve(kReserveFiles);
+				m_strategy.Scan(*dstPath[scanIndex], m_dstScanner, dstDirectories[scanIndex], dstFiles[scanIndex],
+								DirectoryScanner::Flags::kFolderSecurity | (m_fileSecurity ? DirectoryScanner::Flags::kFileSecurity : DirectoryScanner::Flags::kDefault), kAcceptAllScannerFilter);
 			}
 		}
 
 		// wait and continue for first iteration
 		if (!index) {
-			m_srcScanner.Wait();
-			m_refScanner.Wait();
-			m_dstScanner.Wait();
+			m_strategy.WaitForScan(m_srcScanner);
+			m_strategy.WaitForScan(m_refScanner);
+			m_strategy.WaitForScan(m_dstScanner);
 			continue;
 		}
 
@@ -306,25 +426,53 @@ void Backup::CompareDirectories(const std::optional<Path>& optionalSrc, const st
 		const std::uint_fast8_t readIndex = (index & 1) ^ 1;  // == (index - 1) & 1;
 
 		std::vector<Match> copyDirectories;
-		std::vector<Match> staleDirectories;
-		ThreeWayMerge(srcDirectories[readIndex], refDirectories[readIndex], dstDirectories[readIndex], copyDirectories, staleDirectories, CompareDirectoryEntries);
+		std::vector<Match> extraDirectories;
+		// Heuristics for sizing the lists
+		copyDirectories.reserve(srcDirectories[readIndex].size());
+		extraDirectories.reserve(max_difference_0(dstDirectories[readIndex].size(), srcDirectories[readIndex].size()));
+
+		ThreeWayMerge(srcDirectories[readIndex], refDirectories[readIndex], dstDirectories[readIndex], copyDirectories, extraDirectories, CompareName);
 
 		srcDirectories[readIndex].clear();
 		refDirectories[readIndex].clear();
 		dstDirectories[readIndex].clear();
+		// shrink structures if they got too big
+		if (srcDirectories[readIndex].capacity() > kReserveDirectories * 2) {
+			srcDirectories[readIndex].shrink_to_fit();
+		}
+		if (refDirectories[readIndex].capacity() > kReserveDirectories * 2) {
+			refDirectories[readIndex].shrink_to_fit();
+		}
+		if (dstDirectories[readIndex].capacity() > kReserveDirectories * 2) {
+			dstDirectories[readIndex].shrink_to_fit();
+		}
 
 		std::vector<Match> copyFiles;
-		std::vector<Match> staleFiles;
-		ThreeWayMerge(srcFiles[readIndex], refFiles[readIndex], dstFiles[readIndex], copyFiles, staleFiles, CompareFileEntries);
+		std::vector<Match> extraFiles;
+		// Heuristics for sizing the lists
+		copyFiles.reserve(srcFiles[readIndex].size());
+		extraFiles.reserve(max_difference_0(dstFiles[readIndex].size(), srcFiles[readIndex].size()));
+
+		ThreeWayMerge(srcFiles[readIndex], refFiles[readIndex], dstFiles[readIndex], copyFiles, extraFiles, CompareName);
 
 		srcFiles[readIndex].clear();
 		refFiles[readIndex].clear();
 		dstFiles[readIndex].clear();
+		// shrink structures if they got too big
+		if (srcFiles[readIndex].capacity() > kReserveFiles * 2) {
+			srcFiles[readIndex].shrink_to_fit();
+		}
+		if (refFiles[readIndex].capacity() > kReserveFiles * 2) {
+			refFiles[readIndex].shrink_to_fit();
+		}
+		if (dstFiles[readIndex].capacity() > kReserveFiles * 2) {
+			dstFiles[readIndex].shrink_to_fit();
+		}
 
 		// wait for disk activity to end
-		m_srcScanner.Wait();
-		m_refScanner.Wait();
-		m_dstScanner.Wait();
+		m_strategy.WaitForScan(m_srcScanner);
+		m_strategy.WaitForScan(m_refScanner);
+		m_strategy.WaitForScan(m_dstScanner);
 
 		assert(idx[readIndex].has_value());
 		const Match& match = directories[*idx[readIndex]];
@@ -335,34 +483,60 @@ void Backup::CompareDirectories(const std::optional<Path>& optionalSrc, const st
 
 		// remove stale entries from destination
 		if (match.dst.has_value()) {
-			for (const Match& staleFile : staleFiles) {
-				const Path dstFile = *dstPath[readIndex] / staleFile.dst->name;
+			for (const Match& extraFile : extraFiles) {
+				const Path dstFile = *dstPath[readIndex] / extraFile.dst->GetName();
 				LOG_DEBUG("Delete file {}", dstFile);
-				dstFile.ForceDelete();
+				m_strategy.Delete(dstFile);
+				m_statistics.OnRemove(extraFile);
 			}
-			staleFiles.clear();
+			extraFiles.clear();
+			extraFiles.shrink_to_fit();  // reclaim memory
 
-			CompareDirectories(std::nullopt, std::nullopt, *dstPath[readIndex], staleDirectories);
-			staleDirectories.clear();
+			if (!extraDirectories.empty()) {
+				CopyDirectories(std::nullopt, std::nullopt, *dstPath[readIndex], extraDirectories);
+				extraDirectories.clear();
+			}
+			extraDirectories.shrink_to_fit();  // reclaim memory
 
 			if (!match.src.has_value()) {
 				// DeleteDirectory
 				LOG_DEBUG("Remove directory {}", *dstPath[readIndex]);
-				dstPath[readIndex]->ForceDelete();
+				m_strategy.Delete(*dstPath[readIndex]);
+				m_statistics.OnRemove(match);
 			}
 		}
 
 		if (match.src.has_value()) {
+			if (!match.src->GetStreams().empty()) {
+				// not yet implemented
+				THROW(std::domain_error("streams for directories are not (yet) supported"));
+			}
+
 			if (!match.dst.has_value()) {
 				// CreateDirectory
 				LOG_DEBUG("Create directory {}", *dstTargetPath[readIndex]);
-				if (!CreateDirectoryExW(srcPath[readIndex]->c_str(), dstTargetPath[readIndex]->c_str(), nullptr)) {
-					THROW(m3c::windows_exception(GetLastError()), "CreateDirectoryEx {}", *dstTargetPath[readIndex]);
+				m_strategy.CreateDirectory(*dstTargetPath[readIndex], *srcPath[readIndex], *match.src);
+				m_statistics.OnAdd(match);
+			} else {
+				if (!srcPath[readIndex]->GetFilename().IsSameStringAs(dstPath[readIndex]->GetFilename())) {
+					assert(srcPath[readIndex]->GetFilename() == dstPath[readIndex]->GetFilename());
+					LOG_DEBUG("Rename directory {} to {}", *dstPath[readIndex], *dstTargetPath[readIndex]);
+					m_strategy.Rename(*dstPath[readIndex], *dstTargetPath[readIndex]);
+					m_statistics.OnUpdate(match);
+				} else if (!SameAttributes(*match.src, *match.dst)) {
+					// distinguish changes in source data from technical changes because of copying files
+					m_statistics.OnUpdate(match);
+					// attributes will be set after all files have been written
+				} else {
+					m_statistics.OnRetain(match);
 				}
-			} else if (!srcPath[readIndex]->GetFilename().IsSameStringAs(dstPath[readIndex]->GetFilename())) {
-				assert(srcPath[readIndex]->GetFilename() == dstPath[readIndex]->GetFilename());
-				LOG_DEBUG("Rename directory {} to {}", *dstPath[readIndex], *dstTargetPath[readIndex]);
-				Rename(*dstPath[readIndex], *dstTargetPath[readIndex]);
+
+				// adjust security if required
+				if (!SameSecurity(*match.src, *match.dst)) {
+					LOG_DEBUG("Update security of {}", *dstTargetPath[readIndex]);
+					m_strategy.SetSecurity(*dstTargetPath[readIndex], *match.src);
+					m_statistics.OnSecurityUpdate(match);
+				}
 			}
 		}
 
@@ -371,74 +545,119 @@ void Backup::CompareDirectories(const std::optional<Path>& optionalSrc, const st
 			assert(match.src.has_value());
 			assert(matchedFile.src.has_value());
 
-			const Path srcFile = *srcPath[readIndex] / matchedFile.src->name;
-			if (matchedFile.src->attributes & kUnsupportedAttributesMask) {
-				THROW(std::exception(), "File has unsupported attributes {}: {}", matchedFile.src->attributes, srcFile);
+			const Path srcFile = *srcPath[readIndex] / matchedFile.src->GetName();
+			if (matchedFile.src->GetAttributes() & BackupStrategy::kUnsupportedAttributesMask) {
+				THROW(std::exception(), "File has unsupported attributes {}: {}", matchedFile.src->GetAttributes(), srcFile);
 			}
 
-			const Path dstTargetFile = *dstTargetPath[readIndex] / matchedFile.src->name;
+			const Path dstTargetFile = *dstTargetPath[readIndex] / matchedFile.src->GetName();
 
 			// check if dst is the same as src
 			if (matchedFile.dst.has_value()) {
-				assert(match.dst.has_value());
-				const Path dstFile = *dstPath[readIndex] / matchedFile.dst->name;
+				const Path dstFile = *dstPath[readIndex] / matchedFile.dst->GetName();
 
-				if (matchedFile.dst->attributes & kUnsupportedAttributesMask) {
+				if (!SameAttributes(*matchedFile.src, *matchedFile.dst)) {
+					// remove dst if it has changed attributes
+					LOG_DEBUG("File has changed, removing {}", dstFile);
+				} else if (matchedFile.dst->GetAttributes() & BackupStrategy::kUnsupportedAttributesMask) {
 					// remove dst if it has unsupported attributes
-					LOG_DEBUG("File has unsupported attributes {}: {}", matchedFile.dst->attributes, dstFile);
+					LOG_DEBUG("File has unsupported attributes {}, removing: {}", matchedFile.dst->GetAttributes(), dstFile);
 				} else {
-					// compare src and dst
-					LOG_DEBUG("Compare files {} and {}", srcFile, dstFile);
-					// TODO
-					const bool same = true;
-					if (same) {
-						if (!matchedFile.src->name.IsSameStringAs(matchedFile.dst->name)) {
-							assert(matchedFile.src->name == matchedFile.dst->name);
-							// change case
-							LOG_DEBUG("Rename {} to {}", dstFile, dstTargetFile);
-							Rename(dstFile, dstTargetFile);
-						}
-						continue;
+					// check if security must be updated
+					const bool differentSecurity = m_fileSecurity && !SameSecurity(*matchedFile.src, *matchedFile.dst);
+					if (differentSecurity && matchedFile.dst->IsHardLink(*matchedFile.ref)) {
+						// file is hard link, so changing security would modify copy in ref -> delete and create new
+						goto dstDifferent;
 					}
+
+					if (m_compareContents) {
+						// compare contents of src and dst
+						LOG_DEBUG("Compare files {} and {}", srcFile, dstFile);
+						if (!m_strategy.Compare(srcFile, dstFile, m_fileComparer)) {
+							goto dstDifferent;
+						}
+						const std::vector<ScannedFile::Stream>& srcStreams = matchedFile.src->GetStreams();
+						const std::vector<ScannedFile::Stream>& dstStreams = matchedFile.dst->GetStreams();
+						assert(srcStreams.size() == dstStreams.size());
+
+						for (std::size_t i = 0, max = srcStreams.size(); i < max; ++i) {
+							assert(srcStreams[i].GetName() == dstStreams[i].GetName());
+							const Path srcStreamName = srcFile + srcStreams[i].GetName();
+							const Path dstStreamName = dstFile + dstStreams[i].GetName();
+
+							LOG_DEBUG("Compare streams {} and {}", srcStreamName, dstStreamName);
+							if (!m_strategy.Compare(srcStreamName, dstStreamName, m_fileComparer)) {
+								goto dstDifferent;
+							}
+						}
+					}
+
+					if (matchedFile.src->GetName().IsSameStringAs(matchedFile.dst->GetName())) {
+						m_statistics.OnRetain(matchedFile);
+					} else {
+						assert(matchedFile.src->GetName() == matchedFile.dst->GetName());
+						// change case
+						LOG_DEBUG("Rename {} to {}", dstFile, dstTargetFile);
+						m_strategy.Rename(dstFile, dstTargetFile);
+						m_statistics.OnUpdate(matchedFile);
+					}
+
+					// adjust security if required
+					if (differentSecurity) {
+						LOG_DEBUG("Update security of {}", dstTargetFile);
+						m_strategy.SetSecurity(dstTargetFile, *matchedFile.src);
+						m_statistics.OnSecurityUpdate(matchedFile);
+					}
+
+					continue;
+
+				dstDifferent:
 					// delete outdated copy in target
 					LOG_DEBUG("Delete file for replacement {}", dstFile);
 				}
-				dstFile.ForceDelete();
+				m_strategy.Delete(dstFile);
+				m_statistics.OnReplace(matchedFile);
+			} else {
+				m_statistics.OnAdd(matchedFile);
 			}
 
 			// check if ref is the same as src (if not same hard-link as dst)
-			if (matchedFile.ref.has_value() && !(matchedFile.dst.has_value() && std::memcmp(&matchedFile.ref->fileId, &matchedFile.dst->fileId, sizeof(matchedFile.ref->fileId)) == 0)) {
-				const Path refFile = *refPath[readIndex] / matchedFile.ref->name;
+			if (matchedFile.ref.has_value() && SameAttributes(*matchedFile.src, *matchedFile.ref) && !(matchedFile.dst.has_value() && matchedFile.ref->IsHardLink(*matchedFile.dst)) && (!m_fileSecurity || SameSecurity(*matchedFile.src, *matchedFile.ref))) {
+				const Path refFile = *refPath[readIndex] / matchedFile.ref->GetName();
 
-				// compare src and ref
-				LOG_DEBUG("Compare files {} and {}", srcFile, refFile);
-				const bool same = true;
-				if (same) {
-					// if same create hard link for ref in dst and continue
-					LOG_DEBUG("Create link from {} to {}", refFile, dstTargetFile);
-					if (!CreateHardLinkW(dstTargetFile.c_str(), refFile.c_str(), nullptr)) {
-						THROW(m3c::windows_exception(GetLastError()), "CreateHardLink {} to {}", refFile, dstTargetFile);
+				if (m_compareContents) {
+					// compare contents of src and ref
+					LOG_DEBUG("Compare files {} and {}", srcFile, refFile);
+					if (!m_strategy.Compare(srcFile, refFile, m_fileComparer)) {
+						goto refDifferent;
 					}
-					continue;
 				}
+				assert(matchedFile.src->GetSize() == matchedFile.ref->GetSize());
+				// if same create hard link for ref in dst and continue
+				LOG_DEBUG("Create link from {} to {}", refFile, dstTargetFile);
+				m_strategy.CreateHardLink(dstTargetFile, refFile);
+				m_statistics.OnHardLink(matchedFile.src->GetSize());
+				continue;
 			}
+		refDifferent:
 
 			// copy src to dst
 			LOG_DEBUG("Copy file {} to {}", srcFile, dstTargetFile);
-
-			BOOL cancel = FALSE;
-			COPYFILE2_EXTENDED_PARAMETERS params = {sizeof(params), COPY_FILE_FAIL_IF_EXISTS | COPY_FILE_NO_BUFFERING, &cancel, nullptr, nullptr};
-			COM_HR(CopyFile2(srcFile.c_str(), dstTargetFile.c_str(), &params), "CopyFile2 {} to {}", srcFile, dstTargetFile);
-			// TODO
-			CopyAttributesAndTimestamps(*match.src, dstTargetFile);
+			m_strategy.Copy(srcFile, dstTargetFile);
+			// copying does copy attributes and security, however we want the original file times
+			m_strategy.SetAttributes(dstTargetFile, *matchedFile.src);
+			m_statistics.OnCopy(matchedFile.src->GetSize());
 		}
 		copyFiles.clear();
+		copyFiles.shrink_to_fit();
 
 		if (match.src.has_value()) {
-			CompareDirectories(srcPath[readIndex], refPath[readIndex], *dstTargetPath[readIndex], copyDirectories);
+			if (!copyDirectories.empty()) {
+				CopyDirectories(srcPath[readIndex], refPath[readIndex], *dstTargetPath[readIndex], copyDirectories);
+			}
 
 			// UpdateDirectoryAttributes (after any copy operations might have modified the timestamps)
-			CopyAttributesAndTimestamps(*match.src, *dstTargetPath[readIndex]);
+			m_strategy.SetAttributes(*dstTargetPath[readIndex], *match.src);
 		}
 
 		// mark data as "processed"
@@ -451,101 +670,3 @@ void Backup::CompareDirectories(const std::optional<Path>& optionalSrc, const st
 }
 
 }  // namespace systools
-#if 0
-std::wstring MakeSystemPath(const std::wstring& basePath, const std::wstring& relativePath) {
-	return L"\\\\?\\" + basePath + (relativePath.empty ? L"" : (L"\\" + relativePath));
-}
-
-void OverlappedCompletion(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped) {
-	// no op
-}
-
-bool IsSameContent(const std::wstring& sourceFile, const std::wstring& previousFile) {
-	// get physical sector size using  IOCTL_STORAGE_QUERY_PROPERTY  with STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR
-
-	HANDLE hSource = CreateFileW(sourceFile.c_str(), FILE_READ_DATA, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED, nullptr);
-	if (hSource == INVALID_HANDLE_VALUE) {
-	}
-	HANDLE hPrevious = CreateFileW(sourceFile.c_str(), FILE_READ_DATA, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED, nullptr);
-	if (hPrevious == INVALID_HANDLE_VALUE) {
-	}
-
-	std::byte sourceBuffer[4096];    // -> align
-	std::byte previousBuffer[4096];  // -> align
-
-	OVERLAPPED sourceOverlapped = {};
-	sourceOverlapped.Offset = 0;
-	sourceOverlapped.OffsetHigh = 0;
-	ReadFileEx(hSource, sourceBuffer, size /* align */, &sourceOverlapped, OverlappedCompletion);
-
-	OVERLAPPED previousOverlapped = {};
-	previousOverlapped.Offset = 0;
-	previousOverlapped.OffsetHigh = 0;
-	ReadFileEx(hPrevious, previousBuffer, size /* align */, &previousOverlapped, OverlappedCompletion);
-
-	DWORD sourceBytesRead;
-	BOOL result = GetOverlappedResultEx(hSource, &sourceOverlapped, &sourceBytesRead, INFINITE, TRUE);
-
-	DWORD previousBytesRead;
-	BOOL result = GetOverlappedResultEx(hPrevious, &previousOverlapped, &previousBytesRead, INFINITE, TRUE);
-}
-
-void CopyToTarget(const std::wstring& sourceDirectory, const std::wstring& targetDirectory, const std::wstring& previousDirectory, const std::wstring& relativePath) {
-	const std::wstring source = MakeSystemPath(sourceDirectory, relativePath);
-	const std::wstring target = MakeSystemPath(targetDirectory, relativePath);
-	const std::wstring previous = MakeSystemPath(previousDirectory, relativePath);
-
-	const wchar_t* const wszSource = source.c_str();
-	const wchar_t* const wszTarget = target.c_str();
-
-	// create target directory if it does not exist
-	CreateDirectoryExW(wszSource, wszTarget, nullptr);
-
-	// set attributes for target directory
-
-	// get all directories and files in source directory
-	const std::wstring pattern = source + L"\\*";
-	WIN32_FIND_DATA findData;
-	HANDLE hFindFile = FindFirstFileExW(pattern.c_str(), FINDEX_INFO_LEVELS::FindExInfoBasic, &findData, FINDEX_SEARCH_OPS::FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
-
-	if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-		// for each directory: recurse
-		CopyToTarget(sourceDirectory, targetDirectory, previousDirectory, relativePath + L"\\" + findData.cFileName);
-	} else {
-		// check file in previous directory
-		WIN32_FILE_ATTRIBUTE_DATA previousAttributes;
-		const std::wstring sourceFile = source + L"\\" + findData.cFileName;
-		const std::wstring targetFile = target + L"\\" + findData.cFileName;
-		const std::wstring previousFile = previous + L"\\" + findData.cFileName;
-		const BOOL result = GetFileAttributesExW(previousFile.c_str(), GET_FILEEX_INFO_LEVELS::GetFileExInfoStandard, &previousAttributes);
-		// if file exists, compare size, last write time, attributes and contents
-		if (result
-			&& findData.nFileSizeLow == previousAttributes.nFileSizeLow && findData.nFileSizeHigh == previousAttributes.nFileSizeHigh
-			&& CompareFileTime(&findData.ftLastWriteTime, &previousAttributes.ftLastWriteTime) == 0
-			&& findData.dwFileAttributes == previousAttributes.dwFileAttributes
-			&& IsSameContent(sourceFile, previousFile)) {
-			// if same, create a hard link
-			const BOOL result = CreateHardLinkW(targetFile.c_str(), previousFile.c_str(), nullptr);
-		} else {
-			//
-			// SymLink?
-			// if not same, copy
-			BOOL cancel;
-			COPYFILE2_EXTENDED_PARAMETERS extendedParameters = {};
-			extendedParameters.dwSize = sizeof(extendedParameters);
-			extendedParameters.dwCopyFlags = COPY_FILE_COPY_SYMLINK | COPY_FILE_FAIL_IF_EXISTS | COPY_FILE_NO_BUFFERING;
-			extendedParameters.pfCancel = &cancel;
-			extendedParameters.pProgressRoutine = nullptr;
-			extendedParameters.pvCallbackContext = nullptr;
-			const HRESULT result = CopyFile2(sourceFile.c_str(), targetFile.c_str(), &extendedParameters);
-		}
-		FindNextFileW(hFindFile, &findData);
-	}
-}
-
-int main() {
-	//CopyToTarget()
-	return 0;
-}
-
-#endif

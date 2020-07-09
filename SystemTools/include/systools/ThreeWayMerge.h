@@ -2,29 +2,31 @@
 
 #include <algorithm>
 #include <iterator>
+#include <optional>
 
 namespace systools {
 
-template <typename Src, typename Ref, typename Dst, typename Copy, typename Stale>
-void ThreeWayMerge(Src& src, Ref& ref, Dst& dst, Copy& copy, Stale& stale, int (*const compare)(const typename Src::value_type&, const typename Src::value_type&)) {
+template <typename Src, typename Ref, typename Dst, typename Copy, typename Extra, typename Compare>
+void ThreeWayMerge(Src& src, Ref& ref, Dst& dst, Copy& copy, Extra& extra, Compare compare) {
 	static_assert(std::is_same_v<Src::value_type, Ref::value_type>);
 	static_assert(std::is_same_v<Src::value_type, Dst::value_type>);
-	static_assert(std::is_same_v<Copy::value_type, Stale::value_type>);
-
-	auto srcBegin = src.begin();
-	auto refBegin = ref.begin();
-	auto dstBegin = dst.begin();
-
-	const auto srcEnd = src.end();
-	const auto refEnd = ref.end();
-	const auto dstEnd = dst.end();
+	static_assert(std::is_same_v<Copy::value_type, Extra::value_type>);
+	static_assert(std::is_invocable_r_v<int, Compare, const Src::value_type&, const Src::value_type&>);
 
 	const auto cmp = [compare](const Src::value_type& lhs, const Src::value_type& rhs) {
 		return compare(lhs, rhs) < 0;
 	};
-	std::sort(srcBegin, srcEnd, cmp);
-	std::sort(refBegin, refEnd, cmp);
-	std::sort(dstBegin, dstEnd, cmp);
+	std::sort(src.begin(), src.end(), cmp);
+	std::sort(ref.begin(), ref.end(), cmp);
+	std::sort(dst.begin(), dst.end(), cmp);
+
+	auto srcBegin = src.cbegin();
+	auto refBegin = ref.cbegin();
+	auto dstBegin = dst.cbegin();
+
+	const auto srcEnd = src.cend();
+	const auto refEnd = ref.cend();
+	const auto dstEnd = dst.cend();
 
 	while (true) {
 		const bool hasSrc = srcBegin != srcEnd;
@@ -68,12 +70,12 @@ void ThreeWayMerge(Src& src, Ref& ref, Dst& dst, Copy& copy, Stale& stale, int (
 		} else if (cmpSrcRef > 0 && cmpRefDst == 0) {
 			assert(cmpSrcDst > 0);
 			assert(hasRef & hasDst);
-			stale.emplace_back(std::nullopt, std::nullopt, *dstBegin);  // *prvFirst not required
+			extra.emplace_back(std::nullopt, std::nullopt /* *refBegin not required */, *dstBegin);
 			++refBegin;
 			++dstBegin;
 		} else if (cmpSrcDst > 0 && cmpRefDst > 0) {
 			assert(hasDst);
-			stale.emplace_back(std::nullopt, std::nullopt, *dstBegin);
+			extra.emplace_back(std::nullopt, std::nullopt, *dstBegin);
 			++dstBegin;
 		} else {
 			assert(false);

@@ -16,6 +16,12 @@
     <Filter Include="Header Files\systools">
       <UniqueIdentifier>{1f780326-7c8b-4e48-91d6-a800bf70b28b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Configuration">
+      <UniqueIdentifier>{3a9d069b-5b97-45fd-9d9c-090d2aa18d5e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Documentation">
+      <UniqueIdentifier>{35f2644c-3cc6-4cd0-b444-16b883f7007e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -36,6 +42,9 @@
     <ClCompile Include="..\..\src\FileComparer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\BackupStrategy.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h">
@@ -45,9 +54,6 @@
       <Filter>Header Files\systools</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\systools\DirectoryScanner.h">
-      <Filter>Header Files\systools</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\include\systools\ThreadPool.h">
       <Filter>Header Files\systools</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\systools\Path.h">
@@ -62,5 +68,25 @@
     <ClInclude Include="..\..\include\systools\FileComparer.h">
       <Filter>Header Files\systools</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\systools\BackupStrategy.h">
+      <Filter>Header Files\systools</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\..\.clang-format">
+      <Filter>Configuration</Filter>
+    </None>
+    <None Include="..\..\..\.clang-tidy">
+      <Filter>Configuration</Filter>
+    </None>
+    <None Include="..\..\..\.editorconfig">
+      <Filter>Configuration</Filter>
+    </None>
+    <None Include="..\..\..\.codacy.yml">
+      <Filter>Configuration</Filter>
+    </None>
+    <None Include="..\..\..\.github\workflows\build.yml">
+      <Filter>Configuration</Filter>
+    </None>
   </ItemGroup>
 </Project>

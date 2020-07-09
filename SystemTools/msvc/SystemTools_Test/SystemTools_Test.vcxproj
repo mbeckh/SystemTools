@@ -37,8 +37,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\test\BackupStrategy_Mock.cpp" />
+    <ClCompile Include="..\..\test\BackupStrategy_Test.cpp" />
+    <ClCompile Include="..\..\test\Backup_Fixture.cpp" />
     <ClCompile Include="..\..\test\DirectoryScanner_Test.cpp" />
     <ClCompile Include="..\..\test\FileComparer_Test.cpp" />
+    <ClCompile Include="..\..\test\BackupFileSystem_Fake.cpp" />
     <ClCompile Include="..\..\test\main.cpp" />
     <ClCompile Include="..\..\test\Path_Test.cpp" />
     <ClCompile Include="..\..\test\Backup_Test.cpp" />
@@ -47,6 +51,9 @@
     <ClCompile Include="..\..\test\Volume_Test.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\test\BackupStrategy_Mock.h" />
+    <ClInclude Include="..\..\test\BackupFileSystem_Fake.h" />
+    <ClInclude Include="..\..\test\Backup_Fixture.h" />
     <ClInclude Include="..\..\test\TestUtils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

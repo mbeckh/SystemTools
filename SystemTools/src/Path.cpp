@@ -1,11 +1,13 @@
 #include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
-#include <m3c/Handle.h>
 #include <m3c/exception.h>
+#include <m3c/handle.h>
 #include <m3c/string_encode.h>
 
 #include <pathcch.h>
+#include <shlwapi.h>
+#include <strsafe.h>
 #include <windows.h>
 
 #include <algorithm>
@@ -15,117 +17,309 @@ namespace systools {
 
 namespace {
 
-constexpr wchar_t kVolumePrefix[] = LR"(\\?\Volume{)";
-constexpr wchar_t kUuid[] = L"00000000-0000-0000-0000-0000000000";
-constexpr std::size_t kVolumeRootLen = sizeof(kVolumePrefix) / sizeof(kVolumePrefix[0]) + sizeof(kUuid) / sizeof(kUuid[0]) /* + }\ (already part of result because of 2 x \0 */;
+/// @brief The length of the prefix for long paths (not including the trailing 0 character).
+constexpr std::size_t kPrefixLen = (sizeof(LR"(\\?\)") - 1) / sizeof(wchar_t);
 
-int CompareFilenames(const std::wstring& file0, const std::wstring& file1) {
-	if (const int cmp = CompareStringOrdinal(file0.c_str(), static_cast<int>(file0.size()), file1.c_str(), static_cast<int>(file1.size()), TRUE); cmp) {
-		return cmp - 2;
+std::weak_ordering CompareFilenames(const wchar_t* file0, std::size_t size0, const wchar_t* file1, std::size_t size1) {
+	const int cmp = CompareStringOrdinal(file0, static_cast<int>(size0), file1, static_cast<int>(size1), TRUE);
+	if (cmp == CSTR_LESS_THAN) {
+		return std::weak_ordering::less;
+	}
+	if (cmp == CSTR_EQUAL) {
+		return std::weak_ordering::equivalent;
+	}
+	if (cmp == CSTR_GREATER_THAN) {
+		return std::weak_ordering::greater;
 	}
 	THROW(m3c::windows_exception(GetLastError()), "CompareStringOrdinal {} / {}", file0, file1);
 }
 
-bool IsVolumeRoot(const std::wstring& str) noexcept {
-	return ((str.size() > kVolumeRootLen && str[kVolumeRootLen] == L'\0') || str.size() == kVolumeRootLen)
-		   && str[kVolumeRootLen - 2] == L'}' && str[kVolumeRootLen - 1] == L'\\'
-		   && str.starts_with(kVolumePrefix)
-		   && std::all_of(
-			   str.cbegin() + sizeof(kVolumePrefix) / sizeof(kVolumePrefix[0]) - 1 /* \0 */,
-			   str.cbegin() + sizeof(kVolumePrefix) / sizeof(kVolumePrefix[0]) - 1 + sizeof(kUuid) / sizeof(kUuid[0]) - 1 /* \0 */,
-			   [](const wchar_t ch) noexcept {
-				   return ch >= L'0' && ch <= L'9' || ch >= L'a' && ch <= L'f' || ch >= L'A' && ch <= L'F' || ch == L'-';
-			   });
+template <std::uint16_t kSize0, std::uint16_t kSize1>
+std::weak_ordering CompareFilenames(const m3c::lazy_wstring<kSize0>& file0, const m3c::lazy_wstring<kSize1>& file1) {
+	const int cmp = CompareStringOrdinal(file0.c_str(), static_cast<int>(file0.size()), file1.c_str(), static_cast<int>(file1.size()), TRUE);
+	if (cmp == CSTR_LESS_THAN) {
+		return std::weak_ordering::less;
+	}
+	if (cmp == CSTR_EQUAL) {
+		return std::weak_ordering::equivalent;
+	}
+	if (cmp == CSTR_GREATER_THAN) {
+		return std::weak_ordering::greater;
+	}
+	THROW(m3c::windows_exception(GetLastError()), "CompareStringOrdinal {} / {}", file0, file1);
 }
 
-/// @brief Trim string to actual size removing any trailing \ and \0 characters.
-void TrimPath(std::wstring& str) {
-	assert(str.find(L'\0') != std::wstring::npos);  // not yet truncated
-
-	// special handling to keep backslash in \\?\Volume{00000000-0000-0000-0000-0000000000}\\ .
-	if (IsVolumeRoot(str)) {
-		str.resize(kVolumeRootLen);
-	} else {
-		wchar_t* pEnd;
-		std::size_t remaining;
-		COM_HR(PathCchRemoveBackslashEx(str.data(), str.size(), &pEnd, &remaining), "PathCchRemoveBackslash {}", str);
-		str.resize(pEnd - str.data() + (*pEnd ? 1 : 0));
+[[nodiscard]] std::size_t GetCaseInsensitiveHash(const wchar_t* str, std::size_t length) noexcept {
+	if (!length) {
+		return 0;
 	}
 
-	assert(str.find(L'\0') == std::wstring::npos);  // properly truncated
+	const int size = static_cast<int>(length);
+	if (size <= MAX_PATH) {
+		wchar_t buffer[MAX_PATH];
+		if (const int len = LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_LOWERCASE, str, size, buffer, MAX_PATH); len) {
+			int h;
+			if (LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_HASH, buffer, len, reinterpret_cast<wchar_t*>(&h), static_cast<int>(sizeof(h)))) {
+				return h;
+			}
+		}
+	} else {
+		const std::unique_ptr<wchar_t[]> buffer = std::make_unique<wchar_t[]>(size);
+		if (const int len = LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_LOWERCASE, str, size, buffer.get(), size); len) {
+			int h;
+			if (LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_HASH, buffer.get(), len, reinterpret_cast<wchar_t*>(&h), static_cast<int>(sizeof(h)))) {
+				return h;
+			}
+		}
+	}
+
+	// die if function fails because error is really severe and could corrupt all data
+	SLOG_FATAL("LCMapStringW {}: {}", str, lg::LastError());
+	assert(false);
+	std::terminate();
+}
+
+template <std::uint16_t kSize>
+[[nodiscard]] std::size_t GetCaseInsensitiveHash(const m3c::basic_lazy_string<kSize, wchar_t>& str) noexcept {
+	if (str.empty()) {
+		return 0;
+	}
+
+	const int size = static_cast<int>(str.size());
+	if (size <= MAX_PATH) {
+		wchar_t buffer[MAX_PATH];
+		if (const int len = LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_LOWERCASE, str.c_str(), size, buffer, MAX_PATH); len) {
+			int h;
+			if (LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_HASH, buffer, len, reinterpret_cast<wchar_t*>(&h), static_cast<int>(sizeof(h)))) {
+				return h;
+			}
+		}
+	} else {
+		const std::unique_ptr<wchar_t[]> buffer = std::make_unique<wchar_t[]>(size);
+		if (const int len = LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_LOWERCASE, str.c_str(), size, buffer.get(), size); len) {
+			int h;
+			if (LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_HASH, buffer.get(), len, reinterpret_cast<wchar_t*>(&h), static_cast<int>(sizeof(h)))) {
+				return h;
+			}
+		}
+	}
+
+	// die if function fails because error is really severe and could corrupt all data
+	SLOG_FATAL("LCMapStringW {}: {}", str, lg::LastError());
+	assert(false);
+	std::terminate();
 }
 
 }  // namespace
 
-bool Filename::operator==(const Filename& filename) const {
-	return CompareFilenames(m_filename, filename.m_filename) == 0;
+Filename::Filename(const wchar_t* filename)
+	: Filename(filename, std::wcslen(filename)) {
+	// empty
 }
 
-bool Filename::operator!=(const Filename& filename) const {
-	return CompareFilenames(m_filename, filename.m_filename) != 0;
-}
-
-const int Filename::CompareTo(const Filename& filename) const {
+std::weak_ordering Filename::operator<=>(const Filename& filename) const {
 	return CompareFilenames(m_filename, filename.m_filename);
 }
 
-
 bool Filename::IsSameStringAs(const Filename& filename) const noexcept {
-	return m_filename == filename.m_filename;
+	return sv() == filename.sv();
 }
 
-Path::Path(const std::wstring& path) {
-	const DWORD size = GetFullPathNameW(path.c_str(), 0, m_path.data(), nullptr);
-	if (!size) {
+void Filename::swap(Filename& filename) noexcept {
+	std::swap(m_filename, filename.m_filename);
+}
+
+std::size_t Filename::hash() const noexcept {
+	return GetCaseInsensitiveHash(m_filename);
+}
+
+
+Path::Path(_In_z_ const wchar_t* path)
+	: Path(path, std::wcslen(path)) {
+}
+
+Path::Path(const std::wstring& path)
+	: Path(path.c_str(), path.size()) {
+	// empty
+}
+
+Path::Path(const std::wstring_view& path)
+	// std::basic_string_view is not required to be null-terminated
+	: Path(m3c::lazy_wstring<128>(path).c_str(), path.size()) {
+	// empty
+}
+
+Path::Path(_In_z_ const wchar_t* path, const std::size_t length) {
+	DWORD len;
+	if (length < MAX_PATH) {
+		wchar_t buffer[MAX_PATH];
+		len = GetFullPathNameW(path, MAX_PATH, buffer, nullptr);
+		if (!len) {
+			THROW(m3c::windows_exception(GetLastError()), "GetFullPathName {}", path);
+		}
+
+		if (len < MAX_PATH) {
+			wchar_t pathBuffer[MAX_PATH];
+			COM_HR(PathCchCanonicalizeEx(pathBuffer, MAX_PATH, buffer, PATHCCH_ALLOW_LONG_PATHS), "PathCchCanonicalizeEx {}", buffer);
+			COM_HR(PathCchRemoveBackslash(pathBuffer, MAX_PATH), "PathCchRemoveBackslashEx {}", pathBuffer);
+			m_path = pathBuffer;
+			return;
+		}
+	} else {
+		len = static_cast<DWORD>(length);
+	}
+
+	std::wstring fullPath(len, L'\0');
+
+	// according to spec, it is allowed to set the terminating 0 character in std::basic_string to 0
+	len = GetFullPathNameW(path, len + 1, fullPath.data(), nullptr);
+	if (!len) {
 		THROW(m3c::windows_exception(GetLastError()), "GetFullPathName {}", path);
 	}
 
-	constexpr std::size_t kPrefixLen = (sizeof(LR"(\\?\)") - 1) / sizeof(wchar_t);
-	const std::size_t bufferSize = size + kPrefixLen + 1 /* for PATHCCH_ENSURE_TRAILING_SLASH */;
-	m_path.resize(bufferSize);  // room for \\?\ prefix
-	const DWORD len = GetFullPathNameW(path.c_str(), size, m_path.data(), nullptr);
-	if (!len || len >= size) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFullPathName {}", path);
+	if (len > fullPath.size()) {
+		fullPath.resize(len - 1);
+
+		len = GetFullPathNameW(path, len, fullPath.data(), nullptr);
+		if (!len || len > fullPath.size()) {
+			THROW(m3c::windows_exception(GetLastError()), "GetFullPathName {}", path);
+		}
 	}
 
-	// add \\?\ if required
-	COM_HR(PathCchAppendEx(m_path.data(), bufferSize, L".", PATHCCH_ENSURE_TRAILING_SLASH | PATHCCH_ALLOW_LONG_PATHS), "PathCchAppendEx {}", m_path);
+	m_path.resize(len + kPrefixLen);
+	COM_HR(PathCchCanonicalizeEx(m_path.data(), m_path.size() + 1, fullPath.c_str(), PATHCCH_ALLOW_LONG_PATHS), "PathCchCanonicalizeEx {}", fullPath);
 
-	TrimPath(m_path);  // implicitly resizes
+	wchar_t* pEnd;
+	std::size_t remaining;
+	COM_HR(PathCchRemoveBackslashEx(m_path.data(), m_path.size() + 1, &pEnd, &remaining), "PathCchRemoveBackslashEx {}", m_path.c_str());
+	m_path.resize(pEnd - m_path.data() + (*pEnd ? 1 : 0));
 }
 
-bool Path::operator==(const Path& path) const {
-	return CompareFilenames(m_path, path.m_path) == 0;
+Path::Path(const Path& path, const wchar_t* sub, std::size_t subSize) {
+	if (path.size() + subSize + kPrefixLen + 1 < MAX_PATH) {
+		// try fast algorithm
+		wchar_t buffer[MAX_PATH];
+		COM_HR(StringCchCopyNW(buffer, MAX_PATH, path.c_str(), path.size()), "StringCchCopyNW {}", path);
+		COM_HR(PathCchAppendEx(buffer, MAX_PATH, sub, PATHCCH_ALLOW_LONG_PATHS), "PathCchAppendEx {} {}", path, sub);
+		COM_HR(PathCchRemoveBackslash(buffer, MAX_PATH), "PathCchRemoveBackslash {}", buffer);
+		m_path = buffer;
+		return;
+	}
+
+	m_path = path.m_path;
+	m_path.resize(path.size() + subSize + kPrefixLen + 1);  // \\?\ plus \ character
+
+	// according to spec, it is allowed to set the terminating 0 character in std::basic_string to 0
+	COM_HR(PathCchAppendEx(m_path.data(), m_path.size() + 1, sub, PATHCCH_ALLOW_LONG_PATHS), "PathCchAppendEx {} {}", path.m_path, sub);
+
+	wchar_t* pEnd;
+	std::size_t remaining;
+	COM_HR(PathCchRemoveBackslashEx(m_path.data(), m_path.size() + 1, &pEnd, &remaining), "PathCchRemoveBackslashEx {}", m_path.c_str());
+	m_path.resize(pEnd - m_path.data() + (*pEnd ? 1 : 0));
 }
 
-bool Path::operator!=(const Path& path) const {
-	return CompareFilenames(m_path, path.m_path) != 0;
+std::weak_ordering Path::operator<=>(const Path& path) const {
+	return CompareFilenames(m_path.c_str(), m_path.size(), path.c_str(), path.size());
+}
+
+std::weak_ordering Path::operator<=>(const std::wstring& path) const {
+	return CompareFilenames(m_path.c_str(), m_path.size(), path.c_str(), path.size());
+}
+
+std::weak_ordering Path::operator<=>(const std::wstring_view& path) const {
+	return CompareFilenames(m_path.c_str(), m_path.size(), path.data(), path.size());
+}
+
+Path& Path::operator/=(_In_z_ const wchar_t* sub) {
+	// using / for strong exception guarantee
+	return *this = std::move(Path(*this, sub, std::wcslen(sub)));
 }
 
 Path& Path::operator/=(const std::wstring& sub) {
 	// using / for strong exception guarantee
-	return *this = std::move(*this / sub);
+	return *this = std::move(Path(*this, sub));
+}
+
+Path& Path::operator/=(const std::wstring_view& sub) {
+	// using / for strong exception guarantee
+	return *this = std::move(Path(*this, sub));
 }
 
 Path& Path::operator/=(const Filename& sub) {
-	// static_cast gives error in Intellisense
-	return operator/=(sub.operator const std::wstring&());
+	// using / for strong exception guarantee
+	return *this = std::move(Path(*this, sub));
+}
+
+Path Path::operator/(_In_z_ const wchar_t* sub) const {
+	return Path(*this, sub, std::wcslen(sub));
 }
 
 Path Path::operator/(const std::wstring& sub) const {
-	Path result(*this);
-	const std::size_t len = result.m_path.size() + sub.size();
-	result.m_path.resize(len + 6);  // \\?\ plus \ plus terminating \0
-	COM_HR(PathCchAppendEx(result.m_path.data(), result.m_path.size(), sub.c_str(), PATHCCH_ALLOW_LONG_PATHS), "PathCchAppendEx {} {}", result.m_path, sub);
-	TrimPath(result.m_path);  // implicitly resizes
-	return result;
+	return Path(*this, sub);
+}
+
+Path Path::operator/(const std::wstring_view& sub) const {
+	return Path(*this, sub);
 }
 
 Path Path::operator/(const Filename& sub) const {
-	// static_cast gives error in Intellisense
-	return operator/(sub.operator const std::wstring&());
+	return Path(*this, sub);
 }
 
+Path& Path::operator+=(const wchar_t append) {
+	// using + for strong exception guarantee
+	return *this = std::move(*this + append);
+}
+
+Path& Path::operator+=(_In_z_ const wchar_t* const append) {
+	// using + for strong exception guarantee
+	return *this = std::move(*this + append);
+}
+
+Path& Path::operator+=(const std::wstring& append) {
+	// using + for strong exception guarantee
+	return *this = std::move(*this + append);
+}
+
+Path& Path::operator+=(const std::wstring_view& append) {
+	// using + for strong exception guarantee
+	return *this = std::move(*this + append);
+}
+
+Path& Path::operator+=(const Filename& append) {
+	// using + for strong exception guarantee
+	return *this = std::move(*this + append);
+}
+
+Path Path::operator+(const wchar_t append) const {
+	Path result(*this);
+	result.m_path += append;
+	return result;
+}
+
+Path Path::operator+(_In_z_ const wchar_t* const append) const {
+	Path result(*this);
+	result.m_path += append;
+	return result;
+}
+
+Path Path::operator+(const std::wstring& append) const {
+	Path result(*this);
+	result.m_path += append;
+	return result;
+}
+
+Path Path::operator+(const std::wstring_view& append) const {
+	Path result(*this);
+	result.m_path += append;
+	return result;
+}
+
+Path Path::operator+(const Filename& append) const {
+	Path result(*this);
+	result.m_path += append.sv();
+	return result;
+}
 
 bool Path::Exists() const {
 	if (GetFileAttributesW(m_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -148,29 +342,48 @@ bool Path::IsDirectory() const {
 Path Path::GetParent() const {
 	Path result(*this);
 
-	if (PathCchIsRoot(m_path.c_str()) || IsVolumeRoot(m_path)) {
-		// prevent error because PathCchRemoveFileSpec expects \0 as part of the size
-		return result;
-	}
-	const HRESULT hr = PathCchRemoveFileSpec(result.m_path.data(), result.m_path.size());
-	COM_HR(hr, "PathCchRemoveFileSpec {}", m_path);
+	// according to spec, it is allowed to set the terminating 0 character in std::basic_string to 0
+	const HRESULT hr = PathCchRemoveFileSpec(result.m_path.data(), result.m_path.size() + 1);
+	COM_HR(hr, "PathCchRemoveFileSpec {}", result.m_path);
 	if (hr != S_FALSE) {
-		TrimPath(result.m_path);
+		wchar_t* pEnd;
+		std::size_t remaining;
+		COM_HR(PathCchRemoveBackslashEx(result.m_path.data(), result.m_path.size() + 1, &pEnd, &remaining), "PathCchRemoveBackslash {}", result.m_path.c_str());
+		result.m_path.resize(pEnd - result.m_path.data() + (*pEnd ? 1 : 0));
 	}
 	return result;
 }
 
 Filename Path::GetFilename() const {
 	wchar_t* pFilename;
-	std::wstring path;
-	const DWORD size = GetFullPathNameW(m_path.c_str(), 0, path.data(), nullptr);
-	if (!size) {
+	DWORD len;
+	if (m_path.size() < MAX_PATH) {
+		wchar_t buffer[MAX_PATH];
+		len = GetFullPathNameW(m_path.c_str(), MAX_PATH, buffer, &pFilename);
+		if (!len) {
+			THROW(m3c::windows_exception(GetLastError()), "GetFullPathName {}", m_path);
+		}
+		if (len < MAX_PATH) {
+			return pFilename ? Filename(pFilename, buffer + len - pFilename) : Filename(L"");
+		}
+		// I have no idea, how this should ever happen because path is always normalized
+		assert(false);
+	} else {
+		len = static_cast<DWORD>(m_path.size());
+	}
+
+	std::wstring path(len, L'\0');
+	// according to spec, it is allowed to set the terminating 0 character in std::basic_string to 0
+	len = GetFullPathNameW(m_path.c_str(), len + 1, path.data(), &pFilename);
+	if (!len) {
 		THROW(m3c::windows_exception(GetLastError()), "GetFullPathName {}", m_path);
 	}
-	path.resize(size);
-	const DWORD len = GetFullPathNameW(m_path.c_str(), size, path.data(), &pFilename);
-	if (!len || len >= size) {
-		THROW(m3c::windows_exception(GetLastError()), "GetFullPathName {}", m_path);
+	if (len > path.size()) {
+		path.resize(len);
+		len = GetFullPathNameW(m_path.c_str(), len + 1, path.data(), &pFilename);
+		if (!len || len > path.size()) {
+			THROW(m3c::windows_exception(GetLastError()), "GetFullPathName {}", m_path);
+		}
 	}
 
 	return pFilename ? Filename(pFilename, path.data() + len - pFilename) : Filename(L"");
@@ -201,31 +414,31 @@ void Path::ForceDelete() const {
 	std::wstring alternativePath[2];
 	if (attributes & FILE_ATTRIBUTE_READONLY) {
 		DWORD size = 0;
-		m3c::FindHandle hFind = FindFirstFileNameW(m_path.c_str(), 0, &size, alternativePath[0].data());
+		m3c::find_handle hFind = FindFirstFileNameW(m_path.c_str(), 0, &size, alternativePath[0].data());
 		if (!hFind) {
 			if (const DWORD lastError = GetLastError(); lastError != ERROR_MORE_DATA) {
 				THROW(m3c::windows_exception(lastError), "FindFirstFileName {}", m_path);
 			}
-			alternativePath[0].resize(size);
+			// according to spec, it is allowed to set the terminating 0 character in std::basic_string to 0
+			alternativePath[0].resize(size - 1);
 
 			hFind = FindFirstFileNameW(m_path.c_str(), 0, &size, alternativePath[0].data());
 			if (!hFind) {
 				THROW(m3c::windows_exception(GetLastError()), "FindFirstFileName {}", m_path);
 			}
 			assert(alternativePath[0][size - 1] == L'\0');
-			alternativePath[0].resize(size - 1);
 		}
 
 		size = 0;
 		if (!FindNextFileNameW(hFind, &size, alternativePath[1].data())) {
 			if (const DWORD lastError = GetLastError(); lastError == ERROR_MORE_DATA) {
-				alternativePath[1].resize(size);
+				// according to spec, it is allowed to set the terminating 0 character in std::basic_string to 0
+				alternativePath[1].resize(size - 1);
 
 				if (!FindNextFileNameW(hFind, &size, alternativePath[1].data())) {
 					THROW(m3c::windows_exception(lastError), "FindFirstFileName {}", m_path);
 				}
 				assert(alternativePath[1][size - 1] == L'\0');
-				alternativePath[1].resize(size - 1);
 			} else if (lastError != ERROR_HANDLE_EOF) {
 				THROW(m3c::windows_exception(lastError), "FindNextFileName {}", m_path);
 			}
@@ -250,16 +463,16 @@ void Path::ForceDelete() const {
 	if (!alternativePath[0].empty() && !alternativePath[1].empty()) {
 		const wchar_t* pRootEnd;
 		COM_HR(PathCchSkipRoot(m_path.c_str(), &pRootEnd), "PathCchSkipRoot {}", m_path);
-		const std::size_t rootLen = pRootEnd - m_path.c_str() + 5 /* \\?\ + \0 */;
+		const std::size_t rootLen = pRootEnd - m_path.c_str() + kPrefixLen /* \\?\ */;
 
 		std::wstring path(rootLen + alternativePath[1].size(), L'\0');
-		COM_HR(PathCchCombineEx(path.data(), path.size(), m_path.c_str(), alternativePath[1].c_str(), PATHCCH_ALLOW_LONG_PATHS), "PathCchCombineEx {} {}", m_path, alternativePath[1]);
+		COM_HR(PathCchCombineEx(path.data(), path.size() + 1, m_path.c_str(), alternativePath[1].c_str(), PATHCCH_ALLOW_LONG_PATHS), "PathCchCombineEx {} {}", m_path, alternativePath[1]);
 
 		if (!SetFileAttributesW(path.c_str(), attributes)) {
 			LOG_DEBUG("SetFileAttributes {}: {}", path.c_str(), lg::LastError());  // path might have trailing \0
 
 			path.resize(rootLen + alternativePath[0].size());
-			COM_HR(PathCchCombineEx(path.data(), path.size(), m_path.c_str(), alternativePath[0].c_str(), PATHCCH_ALLOW_LONG_PATHS), "PathCchCombineEx {} {}", m_path, alternativePath[0]);
+			COM_HR(PathCchCombineEx(path.data(), path.size() + 1, m_path.c_str(), alternativePath[0].c_str(), PATHCCH_ALLOW_LONG_PATHS), "PathCchCombineEx {} {}", m_path, alternativePath[0]);
 			if (!SetFileAttributesW(path.c_str(), attributes)) {
 				THROW(m3c::windows_exception(GetLastError()), "SetFileAttributes {}", path.c_str());  // path might have trailing \0
 			}
@@ -267,16 +480,22 @@ void Path::ForceDelete() const {
 	}
 }
 
+void Path::swap(Path& path) noexcept {
+	std::swap(m_path, path.m_path);
+}
+
+std::size_t Path::hash() const noexcept {
+	return GetCaseInsensitiveHash(m_path.c_str(), m_path.size());
+}
+
 }  // namespace systools
 
 llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const systools::Filename& filename) {
-	// static_cast gives error in Intellisense
-	return logLine << (filename.operator const std::wstring&());
+	return logLine << filename.sv();
 }
 
 llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const systools::Path& path) {
-	// static_cast gives error in Intellisense
-	return logLine << (path.operator const std::wstring&());
+	return logLine << path.sv();
 }
 
 fmt::format_parse_context::iterator fmt::formatter<systools::Filename>::parse(const fmt::format_parse_context& ctx) {  // NOLINT(readability-identifier-naming): MUST use name as in fmt::formatter.
