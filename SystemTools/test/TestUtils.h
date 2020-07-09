@@ -33,7 +33,7 @@ void PrintTo(const LatencyMode mode, _In_ std::ostream* const os);
 
 class WithLatency {
 protected:
-	WithLatency(LatencyMode mode);
+	explicit WithLatency(LatencyMode mode);
 
 protected:
 	MaxRunsType GetMaxRuns() const noexcept;

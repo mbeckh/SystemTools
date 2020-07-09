@@ -88,5 +88,8 @@
     <None Include="..\..\..\.github\workflows\build.yml">
       <Filter>Configuration</Filter>
     </None>
+    <None Include="..\..\..\README.md">
+      <Filter>Documentation</Filter>
+    </None>
   </ItemGroup>
 </Project>

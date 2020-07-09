@@ -24,7 +24,7 @@ class FakeFileSystemException : public std::exception {
 
 class BackupFileSystem_Fake::ScannedFile_Fake : public ScannedFile {
 public:
-	ScannedFile_Fake(const Entry& entry)
+	explicit ScannedFile_Fake(const Entry& entry)
 		: ScannedFile(Filename(entry.filename), LARGE_INTEGER{.QuadPart = static_cast<std::int64_t>(entry.size)}, LARGE_INTEGER{.QuadPart = entry.creationTime}, LARGE_INTEGER{.QuadPart = entry.lastWriteTime}, entry.attributes, GetFileId(entry.fileId), GetStreams(entry.streams)) {
 		assert(entry.size <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()));
 		GetSecurity().pSecurityDescriptor.reset(new security_type(entry.security));
@@ -40,6 +40,7 @@ private:
 
 	static std::vector<ScannedFile::Stream> GetStreams(const std::vector<Entry::Stream>& streams) {
 		std::vector<ScannedFile::Stream> result;
+		result.reserve(streams.size());
 		for (const Entry::Stream& stream : streams) {
 			result.emplace_back(ScannedFile::Stream::name_type(stream.name), LARGE_INTEGER{.QuadPart = static_cast<std::int64_t>(stream.size)}, stream.attributes);
 		}
@@ -137,8 +138,9 @@ const std::unordered_map<Path, BackupFileSystem_Fake::Entry>& BackupFileSystem_F
 
 void BackupFileSystem_Fake::Dump() {
 	std::vector<Path> paths;
+	paths.reserve(m_files.size());
 	for (auto it : m_files) {
-		paths.push_back(it.first.GetParent() / it.second.filename);
+		paths.emplace_back(it.first.GetParent() / it.second.filename);
 	}
 	std::sort(paths.begin(), paths.end());
 
