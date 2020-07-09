@@ -21,7 +21,7 @@ jobs:
         submodules: true
 
     - name: Build
-      uses: mbeckh/msvc-common/actions/build@feature-args
+      uses: mbeckh/msvc-common/actions/build@v2
       with:
         projects: SystemTools, SystemTools_Test
         extra-compiler-args: /D SYSTOOLS_NO_INLINE=__declspec(noinline)
