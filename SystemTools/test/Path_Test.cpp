@@ -1593,7 +1593,7 @@ TEST_P(Path_DeleteTest, ForceDelete_ErrorFindingSecondName_ThrowException) {
 	}
 }
 
-TEST_P(Path_DeleteTest, DISABLED_ForceDelete_ErrorGettingHardlinkRoot_ThrowException) {
+TEST_P(Path_DeleteTest, ForceDelete_ErrorGettingHardlinkRoot_ThrowException) {
 	if (!(std::get<1>(GetParam()) & Attributes::kReadOnly) || std::get<0>(GetParam()) != Mode::kHardlink) {
 		SUCCEED();
 		return;
