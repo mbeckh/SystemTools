@@ -25,9 +25,9 @@ namespace systools {
 
 template <typename Src, typename Ref, typename Dst, typename Copy, typename Extra, typename Compare>
 void ThreeWayMerge(Src& src, Ref& ref, Dst& dst, Copy& copy, Extra& extra, Compare compare) {
-	static_assert(std::is_same_v<Src::value_type, Ref::value_type>);
-	static_assert(std::is_same_v<Src::value_type, Dst::value_type>);
-	static_assert(std::is_same_v<Copy::value_type, Extra::value_type>);
+	static_assert(std::is_same_v<typename Src::value_type, typename Ref::value_type>);
+	static_assert(std::is_same_v<typename Src::value_type, typename Dst::value_type>);
+	static_assert(std::is_same_v<typename Copy::value_type, typename Extra::value_type>);
 	static_assert(std::is_invocable_r_v<int, Compare, const Src::value_type&, const Src::value_type&>);
 
 	const auto cmp = [compare](const Src::value_type& lhs, const Src::value_type& rhs) {

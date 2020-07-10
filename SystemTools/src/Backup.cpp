@@ -27,19 +27,21 @@ limitations under the License.
 #include <m3c/exception.h>
 #include <m3c/finally.h>
 #include <m3c/handle.h>
-#include <m3c/lazy_string.h>
 
-#include <aclapi.h>
 #include <windows.h>
 
 #include <algorithm>
 #include <cassert>
 #include <compare>
+#include <cstddef>
+#include <exception>
+#include <functional>
 #include <optional>
-#include <set>
-#include <string>
+#include <stdexcept>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 

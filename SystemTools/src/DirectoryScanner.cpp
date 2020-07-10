@@ -22,11 +22,8 @@ limitations under the License.
 
 #include <llamalog/llamalog.h>
 #include <m3c/exception.h>
-#include <m3c/finally.h>
 #include <m3c/handle.h>
-#include <m3c/lazy_string.h>
 #include <m3c/mutex.h>
-#include <m3c/types_log.h>
 
 #include <accctrl.h>
 #include <aclapi.h>
@@ -37,7 +34,10 @@ limitations under the License.
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace systools {

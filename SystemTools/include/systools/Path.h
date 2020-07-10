@@ -77,13 +77,13 @@ public:
 		// empty
 	}
 
-	template <std::size_t kSize>
+	template <std::uint16_t kSize>
 	Filename(const m3c::lazy_wstring<kSize>& filename)
 		: m_filename(filename) {
 		// empty
 	}
 
-	template <std::size_t kSize>
+	template <std::uint16_t kSize>
 	Filename(m3c::lazy_wstring<kSize>&& filename)
 		: m_filename(std::move(filename)) {
 		// empty
