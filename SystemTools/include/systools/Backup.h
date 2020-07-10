@@ -3,6 +3,7 @@
 #include <systools/DirectoryScanner.h>
 #include <systools/FileComparer.h>
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 

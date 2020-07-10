@@ -2,7 +2,8 @@
 
 #include <systools/DirectoryScanner.h>
 
-#include <optional>
+#include <windows.h>
+
 #include <vector>
 
 namespace systools {

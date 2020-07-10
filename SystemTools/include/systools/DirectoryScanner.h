@@ -1,17 +1,20 @@
 #pragma once
 
+#include <m3c/lazy_string.h>
 #include <m3c/mutex.h>
 
 #include <systools/Path.h>
 
+#include <windows.h>
+
 #include <atomic>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <thread>
 #include <vector>
 
 namespace systools {
-
-class DirectoryScanner;
 
 class ScannedFile {
 public:

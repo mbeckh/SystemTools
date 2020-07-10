@@ -3,6 +3,9 @@
 
 #include <m3c/lazy_string.h>
 
+#include <cstdint>
+#include <new>
+
 #ifndef SYSTOOLS_NO_INLINE
 #define SYSTOOLS_NO_INLINE
 #endif

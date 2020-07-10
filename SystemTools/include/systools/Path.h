@@ -4,8 +4,14 @@
 
 #include <fmt/core.h>
 
+#include <sal.h>
+
 #include <compare>
+#include <cstddef>
+#include <functional>
 #include <string>
+#include <string_view>
+#include <utility>
 
 #ifndef SYSTOOLS_NO_INLINE
 #define SYSTOOLS_NO_INLINE
@@ -273,6 +279,12 @@ inline void swap(Filename& filename, Filename& oth) noexcept {
 inline void swap(Path& path, Path& oth) noexcept {
 	path.swap(oth);
 }
+
+#ifdef __clang_analyzer__
+// make clang happy and define in namespace for ADL. MSVC can't find correct overload when the declaration is present.
+llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const Filename& filename);
+llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const Path& path);
+#endif
 
 }  // namespace systools
 

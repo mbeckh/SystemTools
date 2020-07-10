@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <iterator>
 #include <optional>
 
 namespace systools {

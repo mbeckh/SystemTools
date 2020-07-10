@@ -9,6 +9,7 @@
 #include <m3c/exception.h>
 #include <m3c/finally.h>
 #include <m3c/handle.h>
+#include <m3c/lazy_string.h>
 
 #include <aclapi.h>
 #include <windows.h>

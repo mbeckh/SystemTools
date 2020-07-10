@@ -1,9 +1,12 @@
 #include "systools/DirectoryScanner.h"
 
+#include "systools/Path.h"
+
 #include <llamalog/llamalog.h>
 #include <m3c/exception.h>
 #include <m3c/finally.h>
 #include <m3c/handle.h>
+#include <m3c/lazy_string.h>
 #include <m3c/mutex.h>
 #include <m3c/types_log.h>
 
@@ -11,8 +14,11 @@
 #include <aclapi.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -26,7 +32,7 @@ const auto LocalFreeDelete = [](void* ptr) noexcept {
 	}
 };
 
-constexpr [[nodiscard]] bool operator<(const DirectoryScanner::Flags test, const DirectoryScanner::Flags value) noexcept {
+[[nodiscard]] constexpr bool operator<(const DirectoryScanner::Flags test, const DirectoryScanner::Flags value) noexcept {
 	return (static_cast<std::uint8_t>(test) & static_cast<std::uint8_t>(value)) == static_cast<std::uint8_t>(test);
 }
 

@@ -4,14 +4,19 @@
 #include "systools/FileComparer.h"
 #include "systools/Path.h"
 
+#include <llamalog/llamalog.h>
 #include <m3c/com_ptr.h>
 #include <m3c/exception.h>
 #include <m3c/handle.h>
+#include <m3c/lazy_string.h>
 
+#include <accctrl.h>
 #include <aclapi.h>
+#include <objbase.h>
 #include <shellapi.h>
 #include <shobjidl.h>
 
+#include <memory>
 
 namespace systools {
 

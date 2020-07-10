@@ -3,14 +3,21 @@
 #include <llamalog/llamalog.h>
 #include <m3c/exception.h>
 #include <m3c/handle.h>
+#include <m3c/lazy_string.h>
 #include <m3c/string_encode.h>
 
+#include <fmt/core.h>
+
 #include <pathcch.h>
-#include <shlwapi.h>
 #include <strsafe.h>
 #include <windows.h>
 
 #include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <cwchar>
+#include <exception>
+#include <memory>
 #include <string>
 
 namespace systools {

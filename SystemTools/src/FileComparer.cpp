@@ -1,13 +1,24 @@
 #include "systools/FileComparer.h"
 
+#include <llamalog/llamalog.h>
+#include <m3c/exception.h>
 #include <m3c/handle.h>
+#include <m3c/mutex.h>
 
 #include <systools/Path.h>
 #include <systools/Volume.h>
 
+#include <windows.h>
+
 #include <atomic>
-#include <limits>
+#include <cassert>
+#include <cstddef>
+#include <cstring>
+#include <exception>
+#include <memory>
+#include <new>
 #include <numeric>
+#include <type_traits>
 
 namespace systools {
 

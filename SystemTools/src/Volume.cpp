@@ -11,7 +11,10 @@
 #include <windows.h>
 #include <winioctl.h>
 
+#include <cstddef>
+#include <memory>
 #include <numeric>
+#include <string>
 
 namespace systools {
 

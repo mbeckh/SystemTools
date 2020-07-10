@@ -3,6 +3,7 @@
 #include <m3c/mutex.h>
 
 #include <atomic>
+#include <cstdint>
 #include <thread>
 
 
