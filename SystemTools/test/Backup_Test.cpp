@@ -19,6 +19,8 @@ limitations under the License.
 #include "Backup_Fixture.h"
 #include "TestUtils.h"
 
+#include <llamalog/llamalog.h>
+
 /// @file
 /// @brief Test cases for the `systools::Backup` class.
 /// @details The following names are used in the tests.

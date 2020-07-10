@@ -24,6 +24,8 @@ limitations under the License.
 #include "systools/DirectoryScanner.h"
 #include "systools/Path.h"
 
+#include <llamalog/llamalog.h>
+
 #include <gtest/gtest-spi.h>
 
 #include <aclapi.h>

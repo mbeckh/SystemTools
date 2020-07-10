@@ -19,6 +19,7 @@ limitations under the License.
 #include "systools/BackupStrategy.h"
 #include "systools/DirectoryScanner.h"
 
+#include <llamalog/llamalog.h>
 #include <m3c/string_encode.h>
 
 #include <numeric>
