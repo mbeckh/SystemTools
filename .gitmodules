@@ -1,0 +1,39 @@
+[submodule "msvc-common"]
+	path = msvc-common
+	url = https://github.com/mbeckh/msvc-common.git
+	update = rebase
+	branch = master
+[submodule "common-cpp"]
+	path = lib/common-cpp
+	url = https://github.com/mbeckh/common-cpp.git
+	update = rebase
+	branch = develop
+[submodule "Detours"]
+	path = lib/Detours
+	url = https://github.com/Microsoft/Detours.git
+	update = merge
+	branch = master
+	shallow = true
+[submodule "googletest"]
+	path = lib/googletest
+	url = https://github.com/google/googletest.git
+	update = merge
+	branch = master
+	shallow = true
+[submodule "llamalog"]
+	path = lib/llamalog
+	url = https://github.com/mbeckh/llamalog.git
+	update = rebase
+	branch = develop
+[submodule "fmt"]
+	path = lib/fmt
+	url = https://github.com/fmtlib/fmt.git
+	update = merge
+	branch = master
+	shallow = true
+[submodule "args"]
+	path = lib/args
+	url = https://github.com/Taywee/args.git
+	update = merge
+	branch = master
+	shallow = true
