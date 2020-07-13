@@ -21,8 +21,8 @@ limitations under the License.
 #include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
-#include <m3c/handle.h>
 #include <m3c/mutex.h>
 
 #include <accctrl.h>
@@ -55,7 +55,7 @@ const auto kLocalFreeDelete = [](void* ptr) noexcept {
 }
 
 void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, DirectoryScanner::Result& files, const DirectoryScanner::Flags flags, const ScannerFilter& filter) {
-	const m3c::handle hDirectory = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_READ_DATA | FILE_READ_EA, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	const m3c::Handle hDirectory = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_READ_DATA | FILE_READ_EA, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 	if (!hDirectory) {
 		THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", path);
 	}
@@ -90,7 +90,7 @@ void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, Dire
 				// get streams
 				if (!directory || DirectoryScanner::Flags::kFolderStreams < flags) {
 					WIN32_FIND_STREAM_DATA stream;
-					const m3c::find_handle hFind = FindFirstStreamW(filePath.c_str(), FindStreamInfoStandard, &stream, 0);
+					const m3c::FindHandle hFind = FindFirstStreamW(filePath.c_str(), FindStreamInfoStandard, &stream, 0);
 					if (!hFind) {
 						if (const DWORD lastError = GetLastError(); lastError != ERROR_HANDLE_EOF) {
 							THROW(m3c::windows_exception(lastError), "FindFirstStreamW {}", filePath);

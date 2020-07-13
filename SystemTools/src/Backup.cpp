@@ -24,9 +24,9 @@ limitations under the License.
 #include "systools/ThreeWayMerge.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
 #include <m3c/finally.h>
-#include <m3c/handle.h>
 
 #include <windows.h>
 
@@ -207,7 +207,7 @@ Backup::Statistics Backup::CreateBackup(const std::vector<Path>& src, const Path
 			THROW(m3c::windows_exception(GetLastError()), "OpenProcessToken");
 		}
 
-		m3c::handle hToken(handle);
+		m3c::Handle hToken(handle);
 		const BOOL result = AdjustTokenPrivileges(hToken, FALSE, &privileges, 0, nullptr, nullptr);
 		const DWORD lastError = GetLastError();
 		if (!result || lastError != ERROR_SUCCESS) {

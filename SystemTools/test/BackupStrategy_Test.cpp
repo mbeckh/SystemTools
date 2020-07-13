@@ -21,8 +21,8 @@ limitations under the License.
 #include "systools/FileComparer.h"
 #include "systools/Path.h"
 
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
-#include <m3c/handle.h>
 #include <m4t/m4t.h>
 
 #include <aclapi.h>
@@ -195,7 +195,7 @@ template <typename T>
 class BackupStrategy_Test : public t::Test {
 protected:
 	void SetUp() override {
-		const m3c::handle hMutex = CreateMutexW(nullptr, FALSE, nullptr);
+		const m3c::Handle hMutex = CreateMutexW(nullptr, FALSE, nullptr);
 		if (!hMutex) {
 			THROW(m3c::windows_exception(GetLastError()), "CreateMutex");
 		}
@@ -262,7 +262,7 @@ protected:
 
 	const std::wstring m_parent = LR"(\\?\Volume{23220209-1205-1000-8000-0000000001}\)";
 	const std::wstring m_name = m_parent + LR"(src)";
-	m3c::handle m_hFile;
+	m3c::Handle m_hFile;
 
 private:
 	std::atomic_uint32_t m_openHandles = 0;
@@ -271,7 +271,7 @@ private:
 class BackupStrategy_RenameTest : public t::TestWithParam<std::tuple<Strategy, FileMode>> {
 protected:
 	void SetUp() override {
-		const m3c::handle hFile = CreateFileW(kTempFile.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, std::get<1>(GetParam()) == FileMode::kReadOnly ? FILE_ATTRIBUTE_READONLY : FILE_ATTRIBUTE_NORMAL, nullptr);
+		const m3c::Handle hFile = CreateFileW(kTempFile.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, std::get<1>(GetParam()) == FileMode::kReadOnly ? FILE_ATTRIBUTE_READONLY : FILE_ATTRIBUTE_NORMAL, nullptr);
 		ASSERT_TRUE(hFile);
 
 		if (std::get<0>(GetParam()) == Strategy::kShell) {

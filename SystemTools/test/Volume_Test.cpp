@@ -19,7 +19,7 @@ limitations under the License.
 #include "TestUtils.h"
 #include "systools/Path.h"
 
-#include <m3c/handle.h>
+#include <m3c/Handle.h>
 #include <m4t/m4t.h>
 
 #include <detours_gmock.h>
@@ -102,7 +102,7 @@ protected:
 				return static_cast<BOOL>(SUCCEEDED(hr));
 			});
 
-		const m3c::handle hMutex = CreateMutexW(nullptr, FALSE, nullptr);
+		const m3c::Handle hMutex = CreateMutexW(nullptr, FALSE, nullptr);
 		if (!hMutex) {
 			THROW(m3c::windows_exception(GetLastError()), "CreateMutex");
 		}
@@ -179,8 +179,8 @@ protected:
 
 protected:
 	DTGM_DEFINE_API_MOCK(Win32, m_win32);
-	m3c::handle m_hVolume;
-	m3c::handle m_hDevice;
+	m3c::Handle m_hVolume;
+	m3c::Handle m_hDevice;
 
 private:
 	std::atomic_uint32_t m_openHandles = 0;

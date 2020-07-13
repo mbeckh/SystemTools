@@ -18,8 +18,8 @@ limitations under the License.
 
 #include "TestUtils.h"
 
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
-#include <m3c/handle.h>
 
 #include <detours_gmock.h>
 #include <pathcch.h>
@@ -241,7 +241,7 @@ protected:
 			ASSERT_TRUE(SetFileAttributesW(kTempPath.c_str(), static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam()))));
 		}
 		if (std::get<0>(GetParam()) == Mode::kFile || std::get<0>(GetParam()) == Mode::kHardlink) {
-			const m3c::handle hFile = CreateFileW(kTempPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam())), nullptr);
+			const m3c::Handle hFile = CreateFileW(kTempPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, static_cast<std::underlying_type_t<Attributes>>(std::get<1>(GetParam())), nullptr);
 			ASSERT_TRUE(hFile);
 		}
 

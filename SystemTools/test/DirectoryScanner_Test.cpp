@@ -19,7 +19,7 @@ limitations under the License.
 #include "TestUtils.h"
 
 #include <m3c/Exception.h>
-#include <m3c/handle.h>
+#include <m3c/Handle.h>
 #include <m4t/m4t.h>
 
 #include <systools/Path.h>
@@ -170,7 +170,7 @@ protected:
 	void SetUp() override {
 		using namespace std::literals::chrono_literals;
 
-		const m3c::handle hMutex = CreateMutexW(nullptr, FALSE, nullptr);
+		const m3c::Handle hMutex = CreateMutexW(nullptr, FALSE, nullptr);
 		if (!hMutex) {
 			THROW(m3c::windows_exception(GetLastError()), "CreateMutex");
 		}
@@ -243,8 +243,8 @@ protected:
 protected:
 	DTGM_DEFINE_API_MOCK(Win32, m_win32);
 	const std::wstring m_path = LR"(\\?\Volume{23220209-1205-1000-8000-0000000001}\test)";
-	m3c::handle m_hDirectory;
-	m3c::handle m_hFind;
+	m3c::Handle m_hDirectory;
+	m3c::Handle m_hFind;
 	std::atomic_uint32_t m_openHandles = 0;
 };
 
