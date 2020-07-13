@@ -19,8 +19,8 @@ limitations under the License.
 #include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
-#include <m3c/handle.h>
 #include <m3c/lazy_string.h>
 #include <m3c/string_encode.h>
 
@@ -83,7 +83,7 @@ std::weak_ordering CompareFilenames(const m3c::lazy_wstring<kSize0>& file0, cons
 	if (size <= MAX_PATH) {
 		wchar_t buffer[MAX_PATH];
 		if (const int len = LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_LOWERCASE, str, size, buffer, MAX_PATH); len) {
-			int h;
+			int h;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 			if (LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_HASH, buffer, len, reinterpret_cast<wchar_t*>(&h), static_cast<int>(sizeof(h)))) {
 				return h;
 			}
@@ -91,7 +91,7 @@ std::weak_ordering CompareFilenames(const m3c::lazy_wstring<kSize0>& file0, cons
 	} else {
 		const std::unique_ptr<wchar_t[]> buffer = std::make_unique<wchar_t[]>(size);
 		if (const int len = LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_LOWERCASE, str, size, buffer.get(), size); len) {
-			int h;
+			int h;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 			if (LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_HASH, buffer.get(), len, reinterpret_cast<wchar_t*>(&h), static_cast<int>(sizeof(h)))) {
 				return h;
 			}
@@ -114,7 +114,7 @@ template <std::uint16_t kSize>
 	if (size <= MAX_PATH) {
 		wchar_t buffer[MAX_PATH];
 		if (const int len = LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_LOWERCASE, str.c_str(), size, buffer, MAX_PATH); len) {
-			int h;
+			int h;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 			if (LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_HASH, buffer, len, reinterpret_cast<wchar_t*>(&h), static_cast<int>(sizeof(h)))) {
 				return h;
 			}
@@ -122,7 +122,7 @@ template <std::uint16_t kSize>
 	} else {
 		const std::unique_ptr<wchar_t[]> buffer = std::make_unique<wchar_t[]>(size);
 		if (const int len = LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_LOWERCASE, str.c_str(), size, buffer.get(), size); len) {
-			int h;
+			int h;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 			if (LCMapStringW(LOCALE_SYSTEM_DEFAULT, LCMAP_HASH, buffer.get(), len, reinterpret_cast<wchar_t*>(&h), static_cast<int>(sizeof(h)))) {
 				return h;
 			}
@@ -150,11 +150,11 @@ bool Filename::IsSameStringAs(const Filename& filename) const noexcept {
 	return sv() == filename.sv();
 }
 
-void Filename::swap(Filename& filename) noexcept {
+void Filename::swap(Filename& filename) noexcept {  // NOLINT(readability-identifier-naming): For std::swap.
 	std::swap(m_filename, filename.m_filename);
 }
 
-std::size_t Filename::hash() const noexcept {
+std::size_t Filename::hash() const noexcept {  // NOLINT(readability-identifier-naming): For std::hash.
 	return GetCaseInsensitiveHash(m_filename);
 }
 
@@ -175,7 +175,7 @@ Path::Path(const std::wstring_view& path)
 }
 
 Path::Path(_In_z_ const wchar_t* path, const std::size_t length) {
-	DWORD len;
+	DWORD len;  // NOLINT(cppcoreguidelines-init-variables): Initialized in following block.
 	if (length < MAX_PATH) {
 		wchar_t buffer[MAX_PATH];
 		len = GetFullPathNameW(path, MAX_PATH, buffer, nullptr);
@@ -214,8 +214,8 @@ Path::Path(_In_z_ const wchar_t* path, const std::size_t length) {
 	m_path.resize(len + kPrefixLen);
 	COM_HR(PathCchCanonicalizeEx(m_path.data(), m_path.size() + 1, fullPath.c_str(), PATHCCH_ALLOW_LONG_PATHS), "PathCchCanonicalizeEx {}", fullPath);
 
-	wchar_t* pEnd;
-	std::size_t remaining;
+	wchar_t* pEnd;          // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
+	std::size_t remaining;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 	COM_HR(PathCchRemoveBackslashEx(m_path.data(), m_path.size() + 1, &pEnd, &remaining), "PathCchRemoveBackslashEx {}", m_path.c_str());
 	m_path.resize(pEnd - m_path.data() + (*pEnd ? 1 : 0));
 }
@@ -237,8 +237,8 @@ Path::Path(const Path& path, const wchar_t* sub, std::size_t subSize) {
 	// according to spec, it is allowed to set the terminating 0 character in std::basic_string to 0
 	COM_HR(PathCchAppendEx(m_path.data(), m_path.size() + 1, sub, PATHCCH_ALLOW_LONG_PATHS), "PathCchAppendEx {} {}", path.m_path, sub);
 
-	wchar_t* pEnd;
-	std::size_t remaining;
+	wchar_t* pEnd;          // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
+	std::size_t remaining;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 	COM_HR(PathCchRemoveBackslashEx(m_path.data(), m_path.size() + 1, &pEnd, &remaining), "PathCchRemoveBackslashEx {}", m_path.c_str());
 	m_path.resize(pEnd - m_path.data() + (*pEnd ? 1 : 0));
 }
@@ -257,22 +257,22 @@ std::weak_ordering Path::operator<=>(const std::wstring_view& path) const {
 
 Path& Path::operator/=(_In_z_ const wchar_t* sub) {
 	// using / for strong exception guarantee
-	return *this = std::move(Path(*this, sub, std::wcslen(sub)));
+	return *this = Path(*this, sub, std::wcslen(sub));
 }
 
 Path& Path::operator/=(const std::wstring& sub) {
 	// using / for strong exception guarantee
-	return *this = std::move(Path(*this, sub));
+	return *this = Path(*this, sub);
 }
 
 Path& Path::operator/=(const std::wstring_view& sub) {
 	// using / for strong exception guarantee
-	return *this = std::move(Path(*this, sub));
+	return *this = Path(*this, sub);
 }
 
 Path& Path::operator/=(const Filename& sub) {
 	// using / for strong exception guarantee
-	return *this = std::move(Path(*this, sub));
+	return *this = Path(*this, sub);
 }
 
 Path Path::operator/(_In_z_ const wchar_t* sub) const {
@@ -293,27 +293,27 @@ Path Path::operator/(const Filename& sub) const {
 
 Path& Path::operator+=(const wchar_t append) {
 	// using + for strong exception guarantee
-	return *this = std::move(*this + append);
+	return *this = *this + append;
 }
 
 Path& Path::operator+=(_In_z_ const wchar_t* const append) {
 	// using + for strong exception guarantee
-	return *this = std::move(*this + append);
+	return *this = *this + append;
 }
 
 Path& Path::operator+=(const std::wstring& append) {
 	// using + for strong exception guarantee
-	return *this = std::move(*this + append);
+	return *this = *this + append;
 }
 
 Path& Path::operator+=(const std::wstring_view& append) {
 	// using + for strong exception guarantee
-	return *this = std::move(*this + append);
+	return *this = *this + append;
 }
 
 Path& Path::operator+=(const Filename& append) {
 	// using + for strong exception guarantee
-	return *this = std::move(*this + append);
+	return *this = *this + append;
 }
 
 Path Path::operator+(const wchar_t append) const {
@@ -361,7 +361,7 @@ bool Path::IsDirectory() const {
 	if (attributes == INVALID_FILE_ATTRIBUTES) {
 		THROW(m3c::windows_exception(GetLastError()), "GetFileAttributes {}", m_path);
 	}
-	return attributes & FILE_ATTRIBUTE_DIRECTORY;
+	return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
 Path Path::GetParent() const {
@@ -371,8 +371,8 @@ Path Path::GetParent() const {
 	const HRESULT hr = PathCchRemoveFileSpec(result.m_path.data(), result.m_path.size() + 1);
 	COM_HR(hr, "PathCchRemoveFileSpec {}", result.m_path);
 	if (hr != S_FALSE) {
-		wchar_t* pEnd;
-		std::size_t remaining;
+		wchar_t* pEnd;          // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
+		std::size_t remaining;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 		COM_HR(PathCchRemoveBackslashEx(result.m_path.data(), result.m_path.size() + 1, &pEnd, &remaining), "PathCchRemoveBackslash {}", result.m_path.c_str());
 		result.m_path.resize(pEnd - result.m_path.data() + (*pEnd ? 1 : 0));
 	}
@@ -380,8 +380,8 @@ Path Path::GetParent() const {
 }
 
 Filename Path::GetFilename() const {
-	wchar_t* pFilename;
-	DWORD len;
+	wchar_t* pFilename;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
+	DWORD len;           // NOLINT(cppcoreguidelines-init-variables): Initialized in the followin block.
 	if (m_path.size() < MAX_PATH) {
 		wchar_t buffer[MAX_PATH];
 		len = GetFullPathNameW(m_path.c_str(), MAX_PATH, buffer, &pFilename);
@@ -439,7 +439,7 @@ void Path::ForceDelete() const {
 	std::wstring alternativePath[2];
 	if (attributes & FILE_ATTRIBUTE_READONLY) {
 		DWORD size = 0;
-		m3c::find_handle hFind = FindFirstFileNameW(m_path.c_str(), 0, &size, alternativePath[0].data());
+		m3c::FindHandle hFind = FindFirstFileNameW(m_path.c_str(), 0, &size, alternativePath[0].data());
 		if (!hFind) {
 			if (const DWORD lastError = GetLastError(); lastError != ERROR_MORE_DATA) {
 				THROW(m3c::windows_exception(lastError), "FindFirstFileName {}", m_path);
@@ -466,6 +466,8 @@ void Path::ForceDelete() const {
 				assert(alternativePath[1][size - 1] == L'\0');
 			} else if (lastError != ERROR_HANDLE_EOF) {
 				THROW(m3c::windows_exception(lastError), "FindNextFileName {}", m_path);
+			} else {
+				// ERROR_HANDLE_EOF -> ok
 			}
 		}
 
@@ -486,7 +488,7 @@ void Path::ForceDelete() const {
 
 	// reset read-only flag
 	if (!alternativePath[0].empty() && !alternativePath[1].empty()) {
-		const wchar_t* pRootEnd;
+		const wchar_t* pRootEnd;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 		COM_HR(PathCchSkipRoot(m_path.c_str(), &pRootEnd), "PathCchSkipRoot {}", m_path);
 		const std::size_t rootLen = pRootEnd - m_path.c_str() + kPrefixLen /* \\?\ */;
 
@@ -505,54 +507,54 @@ void Path::ForceDelete() const {
 	}
 }
 
-void Path::swap(Path& path) noexcept {
+void Path::swap(Path& path) noexcept {  // NOLINT(readability-identifier-naming): For std::swap.
 	std::swap(m_path, path.m_path);
 }
 
-std::size_t Path::hash() const noexcept {
+std::size_t Path::hash() const noexcept {  // NOLINT(readability-identifier-naming): For std::hash.
 	return GetCaseInsensitiveHash(m_path.c_str(), m_path.size());
 }
 
-}  // namespace systools
-
-llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const systools::Filename& filename) {
+llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const Filename& filename) {
 	return logLine << filename.sv();
 }
 
-llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const systools::Path& path) {
+llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const Path& path) {
 	return logLine << path.sv();
 }
 
-fmt::format_parse_context::iterator fmt::formatter<systools::Filename>::parse(const fmt::format_parse_context& ctx) {  // NOLINT(readability-identifier-naming): MUST use name as in fmt::formatter.
+namespace internal {
+
+fmt::format_parse_context::iterator filesystem_base_formatter::parse(const fmt::format_parse_context& ctx) {  // NOLINT(readability-identifier-naming, readability-convert-member-functions-to-static): MUST use name as in fmt::formatter.
 	auto it = ctx.begin();
-	if (it != ctx.end() && *it == ':') {
+	const auto last = ctx.end();
+	if (it != last && *it == ':') {
 		++it;
 	}
 	auto end = it;
 	while (end != ctx.end() && *end != '}') {
 		++end;
 	}
+
+	m_format.reserve(end - it + 3);
+	m_format.assign("{:");
+	m_format.append(it, end);
+	m_format.push_back('}');
 	return end;
 }
 
-fmt::format_context::iterator fmt::formatter<systools::Filename>::format(const systools::Filename& arg, fmt::format_context& ctx) {  // NOLINT(readability-identifier-naming): MUST use name as in fmt::formatter.
-	const std::string value = m3c::EncodeUtf8(arg.c_str(), arg.size());
-	return std::copy(value.begin(), value.end(), ctx.out());
+fmt::format_context::iterator filesystem_base_formatter::Format(const wchar_t* const str, const std::size_t len, fmt::format_context& ctx) const {
+	const std::string value = m3c::EncodeUtf8(str, len);
+	return fmt::format_to(ctx.out(), m_format, value);
 }
 
-fmt::format_parse_context::iterator fmt::formatter<systools::Path>::parse(const fmt::format_parse_context& ctx) {  // NOLINT(readability-identifier-naming): MUST use name as in fmt::formatter.
-	auto it = ctx.begin();
-	if (it != ctx.end() && *it == ':') {
-		++it;
-	}
-	auto end = it;
-	while (end != ctx.end() && *end != '}') {
-		++end;
-	}
-	return end;
+}  // namespace internal
+}  // namespace systools
+
+fmt::format_context::iterator fmt::formatter<systools::Filename>::format(const systools::Filename& arg, fmt::format_context& ctx) {  // NOLINT(readability-identifier-naming, readability-convert-member-functions-to-static): MUST use name as in fmt::formatter.
+	return Format(arg.c_str(), arg.size(), ctx);
 }
 
-fmt::format_context::iterator fmt::formatter<systools::Path>::format(const systools::Path& arg, fmt::format_context& ctx) {  // NOLINT(readability-identifier-naming): MUST use name as in fmt::formatter.
-	const std::string value = m3c::EncodeUtf8(arg.c_str(), arg.size());
-	return std::copy(value.begin(), value.end(), ctx.out());
+fmt::format_context::iterator fmt::formatter<systools::Path>::format(const systools::Path& arg, fmt::format_context& ctx) {  // NOLINT(readability-identifier-naming, readability-convert-member-functions-to-static): MUST use name as in fmt::formatter.
+	return Format(arg.c_str(), arg.size(), ctx);
 }

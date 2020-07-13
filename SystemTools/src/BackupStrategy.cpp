@@ -23,9 +23,9 @@ limitations under the License.
 #include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/Handle.h>
 #include <m3c/com_ptr.h>
 #include <m3c/exception.h>
-#include <m3c/handle.h>
 #include <m3c/lazy_string.h>
 
 #include <accctrl.h>
@@ -67,28 +67,28 @@ void BaseBackupStrategy::WaitForScan(DirectoryScanner& scanner) const {
 // DryRunBackupStrategy
 //
 
-void DryRunBackupStrategy::CreateDirectory(const Path&, const Path&, const ScannedFile&) const {
+void DryRunBackupStrategy::CreateDirectory(const Path& /* path */, const Path& /* templatePath */, const ScannedFile& /* securitySource */) const {
 }
 
-void DryRunBackupStrategy::CreateDirectoryRecursive(const Path&) const {
+void DryRunBackupStrategy::CreateDirectoryRecursive(const Path& /* path */) const {
 }
 
-void DryRunBackupStrategy::SetAttributes(const Path&, const ScannedFile&) const {
+void DryRunBackupStrategy::SetAttributes(const Path& /* path */, const ScannedFile& /* attributesSource */) const {
 }
 
-void DryRunBackupStrategy::SetSecurity(const Path&, const ScannedFile&) const {
+void DryRunBackupStrategy::SetSecurity(const Path& /* path */, const ScannedFile& /* securitySource */) const {
 }
 
-void DryRunBackupStrategy::Rename(const Path&, const Path&) const {
+void DryRunBackupStrategy::Rename(const Path& /* existingName */, const Path& /* newName */) const {
 }
 
-void DryRunBackupStrategy::Copy(const Path&, const Path&) const {
+void DryRunBackupStrategy::Copy(const Path& /* source */, const Path& /* target */) const {
 }
 
-void DryRunBackupStrategy::CreateHardLink(const Path&, const Path&) const {
+void DryRunBackupStrategy::CreateHardLink(const Path& /* path */, const Path& /* existing */) const {
 }
 
-void DryRunBackupStrategy::Delete(const Path&) const {
+void DryRunBackupStrategy::Delete(const Path& /* path */) const {
 }
 
 
@@ -114,7 +114,7 @@ void WritingBackupStrategy::CreateDirectoryRecursive(const Path& path) const {
 }
 
 void WritingBackupStrategy::SetAttributes(const Path& path, const ScannedFile& attributesSource) const {
-	const m3c::handle hDst = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	const m3c::Handle hDst = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 	if (!hDst) {
 		THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", path);
 	}
@@ -160,9 +160,9 @@ void WritingBackupStrategy::Rename(const Path& existingName, const Path& newName
 			THROW(m3c::windows_exception(lastError), "MoveFileEx {} to {}", existingName, newName);
 		}
 		m3c::com_ptr<IShellItem> item;
-		COM_HR(SHCreateItemFromParsingName(existingName.c_str(), nullptr, __uuidof(IShellItem), (void**) &item), "SHCreateItemFromParsingName {}", existingName);
+		COM_HR(SHCreateItemFromParsingName(existingName.c_str(), nullptr, __uuidof(IShellItem), reinterpret_cast<void**>(&item)), "SHCreateItemFromParsingName {}", existingName);
 		m3c::com_ptr<IFileOperation> fo;
-		COM_HR(CoCreateInstance(__uuidof(FileOperation), nullptr, CLSCTX_ALL, __uuidof(IFileOperation), (void**) &fo), "CoCreateInstance");
+		COM_HR(CoCreateInstance(__uuidof(FileOperation), nullptr, CLSCTX_ALL, __uuidof(IFileOperation), reinterpret_cast<void**>(&fo)), "CoCreateInstance");
 		COM_HR(fo->SetOperationFlags(FOF_NO_UI), "SetOperationFlags");
 		const Filename filename = newName.GetFilename();
 		COM_HR(fo->RenameItem(item.get(), filename.c_str(), nullptr), "RenameItem {} to {}", existingName, filename);

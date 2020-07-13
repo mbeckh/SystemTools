@@ -127,7 +127,7 @@ public:
 	// File Operations
 	void CreateDirectory(const Path& path, const Path& templatePath, const ScannedFile& securitySource) const final;
 	void CreateDirectoryRecursive(const Path& path) const final;
-	void SetAttributes(const Path& target, const ScannedFile& attributesSource) const final;
+	void SetAttributes(const Path& path, const ScannedFile& attributesSource) const final;
 	void SetSecurity(const Path& path, const ScannedFile& securitySource) const final;
 	void Rename(const Path& existingName, const Path& newName) const final;
 	void Copy(const Path& source, const Path& target) const final;

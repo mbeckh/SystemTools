@@ -100,7 +100,7 @@ public:
 		void OnHardLink(std::uint64_t bytes);
 
 	private:
-		void OnEvent(Entry& entry, const ScannedFile& file);
+		static void OnEvent(Entry& entry, const ScannedFile& file);
 
 	private:
 		Entry m_added;
