@@ -85,7 +85,7 @@ jobs:
       with:
         id: ${{ matrix.configuration }}
         clang-args: -D_WIN32_WINNT=0x0602 ${{ env.analyze_args }}
-    
+
     - name: Save logs
       if: always()
       uses: actions/upload-artifact@v2

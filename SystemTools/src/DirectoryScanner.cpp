@@ -21,12 +21,9 @@ limitations under the License.
 #include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
-#include <m3c/finally.h>
-#include <m3c/handle.h>
-#include <m3c/lazy_string.h>
 #include <m3c/mutex.h>
-#include <m3c/types_log.h>
 
 #include <accctrl.h>
 #include <aclapi.h>
@@ -37,14 +34,17 @@ limitations under the License.
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace systools {
 
 namespace {
 
-const auto LocalFreeDelete = [](void* ptr) noexcept {
+const auto kLocalFreeDelete = [](void* ptr) noexcept {
 	if (LocalFree(ptr)) {
 		SLOG_ERROR("LocalFree: {}", lg::LastError());
 	}
@@ -55,7 +55,7 @@ const auto LocalFreeDelete = [](void* ptr) noexcept {
 }
 
 void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, DirectoryScanner::Result& files, const DirectoryScanner::Flags flags, const ScannerFilter& filter) {
-	const m3c::handle hDirectory = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_READ_DATA | FILE_READ_EA, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	const m3c::Handle hDirectory = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_READ_DATA | FILE_READ_EA, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 	if (!hDirectory) {
 		THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", path);
 	}
@@ -90,7 +90,7 @@ void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, Dire
 				// get streams
 				if (!directory || DirectoryScanner::Flags::kFolderStreams < flags) {
 					WIN32_FIND_STREAM_DATA stream;
-					const m3c::find_handle hFind = FindFirstStreamW(filePath.c_str(), FindStreamInfoStandard, &stream, 0);
+					const m3c::FindHandle hFind = FindFirstStreamW(filePath.c_str(), FindStreamInfoStandard, &stream, 0);
 					if (!hFind) {
 						if (const DWORD lastError = GetLastError(); lastError != ERROR_HANDLE_EOF) {
 							THROW(m3c::windows_exception(lastError), "FindFirstStreamW {}", filePath);
@@ -125,12 +125,12 @@ void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, Dire
 				if ((directory && DirectoryScanner::Flags::kFolderSecurity < flags) || (!directory && DirectoryScanner::Flags::kFileSecurity < flags)) {
 					constexpr SECURITY_INFORMATION kSecurityInformation = ATTRIBUTE_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION | PROTECTED_SACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION | SCOPE_SECURITY_INFORMATION;
 					ScannedFile::Security& security = scannedFile.GetSecurity();
-					PSECURITY_DESCRIPTOR pSecurityDescriptor;
+					PSECURITY_DESCRIPTOR pSecurityDescriptor;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 					const DWORD result = GetNamedSecurityInfoW(filePath.c_str(), SE_FILE_OBJECT, kSecurityInformation, &security.pOwner, &security.pGroup, &security.pDacl, &security.pSacl, &pSecurityDescriptor);
 					if (result != ERROR_SUCCESS) {
 						THROW(m3c::windows_exception(result), "GetNamedSecurityInfoW {}", filePath);
 					}
-					security.pSecurityDescriptor.reset(pSecurityDescriptor, LocalFreeDelete);
+					security.pSecurityDescriptor.reset(pSecurityDescriptor, kLocalFreeDelete);
 				}
 
 				if (directory) {
@@ -175,24 +175,27 @@ void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, Dire
 			return false;
 		}
 		if ((lhsOas.ObjectsPresent & ACE_INHERITED_OBJECT_TYPE_PRESENT) && !IsEqualGUID(lhsOas.InheritedObjectTypeGuid, rhsOas.InheritedObjectTypeGuid)) {
-			return false;
+			return false;  // NOLINT(readability-simplify-boolean-expr): Better readability when not "simplified".
 		}
 		return true;
 	}
 	case TRUSTEE_IS_OBJECTS_AND_NAME: {
 		const OBJECTS_AND_NAME_W& lhsOas = reinterpret_cast<const OBJECTS_AND_NAME_W&>(lhs.ptstrName);
 		const OBJECTS_AND_NAME_W& rhsOas = reinterpret_cast<const OBJECTS_AND_NAME_W&>(rhs.ptstrName);
-		if (lhsOas.ObjectsPresent != rhsOas.ObjectsPresent || lhsOas.ObjectType != rhsOas.ObjectType || std::wcscmp(lhsOas.ptstrName, rhsOas.ptstrName)) {
+		if (lhsOas.ObjectsPresent != rhsOas.ObjectsPresent || lhsOas.ObjectType != rhsOas.ObjectType || std::wcscmp(lhsOas.ptstrName, rhsOas.ptstrName) != 0) {
 			return false;
 		}
-		if ((lhsOas.ObjectsPresent & ACE_OBJECT_TYPE_PRESENT) && std::wcscmp(lhsOas.ObjectTypeName, rhsOas.ObjectTypeName)) {
+		if ((lhsOas.ObjectsPresent & ACE_OBJECT_TYPE_PRESENT) && std::wcscmp(lhsOas.ObjectTypeName, rhsOas.ObjectTypeName) != 0) {
 			return false;
 		}
-		if ((lhsOas.ObjectsPresent & ACE_INHERITED_OBJECT_TYPE_PRESENT) && std::wcscmp(lhsOas.InheritedObjectTypeName, rhsOas.InheritedObjectTypeName)) {
-			return false;
+		if ((lhsOas.ObjectsPresent & ACE_INHERITED_OBJECT_TYPE_PRESENT) && std::wcscmp(lhsOas.InheritedObjectTypeName, rhsOas.InheritedObjectTypeName) != 0) {
+			return false;  // NOLINT(readability-simplify-boolean-expr): Better readability when not "simplified".
 		}
 		return true;
 	}
+	case TRUSTEE_BAD_FORM:
+		// no action required
+		break;
 	}
 	assert(false);
 	return true;
@@ -206,21 +209,21 @@ void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, Dire
 }
 
 [[nodiscard]] bool EqualAcl(const PACL pLhs, const PACL pRhs) {
-	PEXPLICIT_ACCESS_W ptr;
+	PEXPLICIT_ACCESS_W ptr;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 
-	ULONG lhsEntries;
+	ULONG lhsEntries;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 	const DWORD lhsResult = GetExplicitEntriesFromAclW(pLhs, &lhsEntries, &ptr);
 	if (lhsResult != ERROR_SUCCESS) {
 		THROW(m3c::windows_exception(lhsResult, "GetExplicitEntriesFromAclW"));
 	}
-	const std::unique_ptr<EXPLICIT_ACCESSW[], decltype(LocalFreeDelete)> pLhsAccess(ptr);
+	const std::unique_ptr<EXPLICIT_ACCESSW[], decltype(kLocalFreeDelete)> pLhsAccess(ptr);
 
-	ULONG rhsEntries;
+	ULONG rhsEntries;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 	const DWORD rhsResult = GetExplicitEntriesFromAclW(pRhs, &rhsEntries, &ptr);
 	if (rhsResult != ERROR_SUCCESS) {
 		THROW(m3c::windows_exception(rhsResult, "GetExplicitEntriesFromAclW"));
 	}
-	const std::unique_ptr<EXPLICIT_ACCESSW[], decltype(LocalFreeDelete)> pRhsAccess(ptr);
+	const std::unique_ptr<EXPLICIT_ACCESSW[], decltype(kLocalFreeDelete)> pRhsAccess(ptr);
 
 	if (lhsEntries != rhsEntries) {
 		return false;

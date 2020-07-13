@@ -21,8 +21,8 @@ limitations under the License.
 #include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
-#include <m3c/handle.h>
 
 #include <fmt/format.h>
 
@@ -79,7 +79,7 @@ std::align_val_t Volume::GetUnbufferedMemoryAlignment() {
 void Volume::ReadUnbufferedAlignments() {
 	StripToVolumeName(m_name);
 
-	const m3c::handle hVolume = CreateFileW(m_name.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+	const m3c::Handle hVolume = CreateFileW(m_name.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (!hVolume) {
 		THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", m_name);
 	}
@@ -106,7 +106,7 @@ void Volume::ReadUnbufferedAlignments() {
 	DWORD unbufferedMemoryAlignment = 1;
 	for (DWORD i = 0; i < pVolumeDiskExtents->NumberOfDiskExtents; ++i) {
 		const std::wstring deviceName = fmt::format(LR"(\\.\PhysicalDrive{})", pVolumeDiskExtents->Extents[i].DiskNumber);
-		const m3c::handle hDevice = CreateFileW(deviceName.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+		const m3c::Handle hDevice = CreateFileW(deviceName.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 		if (!hDevice) {
 			THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", deviceName);
 		}

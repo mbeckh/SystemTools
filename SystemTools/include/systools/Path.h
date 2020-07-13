@@ -52,6 +52,7 @@ public:
 	Filename(const wchar_t* filename);
 	Filename(const wchar_t* filename, const std::size_t length)
 		: m_filename(filename, length) {
+		// empty
 	}
 
 	Filename(const std::wstring& filename)
@@ -60,6 +61,7 @@ public:
 	}
 	Filename(std::wstring&& filename) noexcept
 		: m_filename(std::move(filename)) {
+		// empty
 	}
 
 	Filename(const std::wstring_view& filename)
@@ -77,13 +79,13 @@ public:
 		// empty
 	}
 
-	template <std::size_t kSize>
+	template <std::uint16_t kSize>
 	Filename(const m3c::lazy_wstring<kSize>& filename)
 		: m_filename(filename) {
 		// empty
 	}
 
-	template <std::size_t kSize>
+	template <std::uint16_t kSize>
 	Filename(m3c::lazy_wstring<kSize>&& filename)
 		: m_filename(std::move(filename)) {
 		// empty
@@ -220,7 +222,7 @@ public:
 	Path& operator/=(const std::wstring& sub);
 	Path& operator/=(const std::wstring_view& sub);
 	Path& operator/=(const Filename& sub);
-	[[nodiscard]] Path operator/ _In_z_(const wchar_t* sub) const;
+	[[nodiscard]] Path operator/(const wchar_t* sub) const;
 	[[nodiscard]] Path operator/(const std::wstring& sub) const;
 	[[nodiscard]] Path operator/(const std::wstring_view& sub) const;
 	[[nodiscard]] Path operator/(const Filename& sub) const;
@@ -298,11 +300,25 @@ inline void swap(Path& path, Path& oth) noexcept {
 	path.swap(oth);
 }
 
-#ifdef __clang_analyzer__
-// make clang happy and define in namespace for ADL. MSVC can't find correct overload when the declaration is present.
 llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const Filename& filename);
 llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const Path& path);
-#endif
+
+namespace internal {
+
+struct filesystem_base_formatter {
+	/// @brief Parse the format string.
+	/// @param ctx see `fmt::formatter::parse`.
+	/// @return see `fmt::formatter::parse`.
+	fmt::format_parse_context::iterator parse(const fmt::format_parse_context& ctx);  // NOLINT(readability-identifier-naming): MUST use name as in fmt::formatter.
+
+protected:
+	fmt::format_context::iterator Format(const wchar_t* str, std::size_t len, fmt::format_context& ctx) const;
+
+private:
+	std::string m_format;
+};
+
+}  // namespace internal
 
 }  // namespace systools
 
@@ -322,16 +338,8 @@ struct std::hash<systools::Path> {
 	}
 };
 
-llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const systools::Filename& filename);
-llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const systools::Path& path);
-
 template <>
-struct fmt::formatter<systools::Filename> {
-	/// @brief Parse the format string.
-	/// @param ctx see `fmt::formatter::parse`.
-	/// @return see `fmt::formatter::parse`.
-	fmt::format_parse_context::iterator parse(const fmt::format_parse_context& ctx);  // NOLINT(readability-identifier-naming): MUST use name as in fmt::formatter.
-
+struct fmt::formatter<systools::Filename> : public systools::internal::filesystem_base_formatter {
 	/// @brief Format the `Filename`.
 	/// @param arg A `Filename`.
 	/// @param ctx see `fmt::formatter::format`.
@@ -340,12 +348,7 @@ struct fmt::formatter<systools::Filename> {
 };
 
 template <>
-struct fmt::formatter<systools::Path> {
-	/// @brief Parse the format string.
-	/// @param ctx see `fmt::formatter::parse`.
-	/// @return see `fmt::formatter::parse`.
-	fmt::format_parse_context::iterator parse(const fmt::format_parse_context& ctx);  // NOLINT(readability-identifier-naming): MUST use name as in fmt::formatter.
-
+struct fmt::formatter<systools::Path> : public systools::internal::filesystem_base_formatter {
 	/// @brief Format the `Path`.
 	/// @param arg A `Path`.
 	/// @param ctx see `fmt::formatter::format`.

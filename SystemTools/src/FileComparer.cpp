@@ -19,8 +19,8 @@ limitations under the License.
 #include "systools/FileComparer.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
-#include <m3c/handle.h>
 #include <m3c/mutex.h>
 
 #include <systools/Path.h>
@@ -277,7 +277,7 @@ void FileComparer::Run(const std::uint_fast8_t index) noexcept {
 void FileComparer::ReadFileContent(const std::uint_fast8_t index) noexcept {
 	std::uint_fast8_t writeIndex = 0;
 	try {
-		const m3c::handle hFile = CreateFileW(m_pContext->path[index]->c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, nullptr);
+		const m3c::Handle hFile = CreateFileW(m_pContext->path[index]->c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, nullptr);
 		if (!hFile) {
 			THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", m_pContext->path[index]);
 		}

@@ -24,22 +24,24 @@ limitations under the License.
 #include "systools/ThreeWayMerge.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/Handle.h>
 #include <m3c/exception.h>
 #include <m3c/finally.h>
-#include <m3c/handle.h>
-#include <m3c/lazy_string.h>
 
-#include <aclapi.h>
 #include <windows.h>
 
 #include <algorithm>
 #include <cassert>
 #include <compare>
+#include <cstddef>
+#include <exception>
+#include <functional>
 #include <optional>
-#include <set>
-#include <string>
+#include <stdexcept>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 
@@ -89,10 +91,10 @@ void WaitForScanNoThrow(BackupStrategy& strategy, DirectoryScanner& scanner) noe
 
 
 struct Backup::Match final {
-	Match(std::optional<ScannedFile> src, std::optional<ScannedFile> ref, std::optional<ScannedFile> dst) noexcept
-		: src(std::move(src))
-		, ref(std::move(ref))
-		, dst(std::move(dst)) {
+	Match(std::optional<ScannedFile> s, std::optional<ScannedFile> r, std::optional<ScannedFile> d) noexcept
+		: src(std::move(s))
+		, ref(std::move(r))
+		, dst(std::move(d)) {
 		assert(!src.has_value() || !ref.has_value() || src->GetName() == ref->GetName());
 		assert(!src.has_value() || !dst.has_value() || src->GetName() == dst->GetName());
 		assert(!src.has_value() || !dst.has_value() || src->GetName() == dst->GetName());
@@ -200,12 +202,12 @@ Backup::Statistics Backup::CreateBackup(const std::vector<Path>& src, const Path
 		}
 		privileges.Privileges->Attributes = SE_PRIVILEGE_ENABLED;
 
-		HANDLE handle;
+		HANDLE handle;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &handle)) {
 			THROW(m3c::windows_exception(GetLastError()), "OpenProcessToken");
 		}
 
-		m3c::handle hToken(handle);
+		m3c::Handle hToken(handle);
 		const BOOL result = AdjustTokenPrivileges(hToken, FALSE, &privileges, 0, nullptr, nullptr);
 		const DWORD lastError = GetLastError();
 		if (!result || lastError != ERROR_SUCCESS) {
@@ -226,8 +228,7 @@ Backup::Statistics Backup::CreateBackup(const std::vector<Path>& src, const Path
 	// group source folders by path
 	std::unordered_map<Path, std::unordered_set<Filename>> srcPaths;
 	std::unordered_set<Filename> allsrcFilenames;
-	for (std::size_t index = 0, max = src.size(); index < max; ++index) {
-		const Path& srcPath = src[index];
+	for (const Path& srcPath : src) {
 		// src folders MUST exist
 		if (!m_strategy.Exists(srcPath) || !m_strategy.IsDirectory(srcPath)) {
 			THROW(std::exception(), "{} is not a directory", srcPath);

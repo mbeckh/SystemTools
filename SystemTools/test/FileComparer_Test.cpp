@@ -20,7 +20,7 @@ limitations under the License.
 #include "systools/Path.h"
 #include "systools/Volume.h"
 
-#include <m3c/handle.h>
+#include <m3c/Handle.h>
 #include <m4t/m4t.h>
 
 #include <detours_gmock.h>
@@ -105,7 +105,7 @@ protected:
 	void SetUp() override {
 		using namespace std::literals::chrono_literals;
 
-		const m3c::handle hMutex = CreateMutexW(nullptr, FALSE, nullptr);
+		const m3c::Handle hMutex = CreateMutexW(nullptr, FALSE, nullptr);
 		if (!hMutex) {
 			THROW(m3c::windows_exception(GetLastError()), "CreateMutex");
 		}
@@ -178,7 +178,7 @@ protected:
 protected:
 	DTGM_DEFINE_API_MOCK(Win32, m_win32);
 	DTGM_DEFINE_CLASS_MOCK(Volume, m_volume);
-	m3c::handle m_hFile[sizeof(kTestFile) / sizeof(kTestFile[0])];
+	m3c::Handle m_hFile[sizeof(kTestFile) / sizeof(kTestFile[0])];
 
 private:
 	std::atomic_uint32_t m_openHandles = 0;
