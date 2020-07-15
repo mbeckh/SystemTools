@@ -19,15 +19,30 @@ limitations under the License.
 #include "TestUtils.h"
 #include "systools/Path.h"
 
+#include <llamalog/llamalog.h>
 #include <m3c/Handle.h>
+#include <m3c/exception.h>
 #include <m4t/m4t.h>
+
+#include <fmt/core.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include <detours_gmock.h>
 #include <strsafe.h>
+#include <windows.h>
 #include <winioctl.h>
 
 #include <atomic>
+#include <cstdint>
+#include <new>
 #include <regex>
+#include <string>
+
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef GetSystemDirectory
+#endif
 
 
 namespace systools::test {

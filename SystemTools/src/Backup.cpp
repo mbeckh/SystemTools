@@ -71,8 +71,8 @@ bool SameSecurity(const ScannedFile& lhs, const ScannedFile& rhs) {
 	return lhs.GetSecurity() == rhs.GetSecurity();
 }
 
-constexpr std::size_t max_difference_0(const std::size_t a, const std::size_t b) noexcept {
-	return a > b ? a - b : 0;
+constexpr std::size_t MaxOfDifferenceAndZero(const std::size_t minuend, const std::size_t subtrahend) noexcept {
+	return minuend > subtrahend ? minuend - subtrahend : 0;
 }
 
 void WaitForScanNoThrow(BackupStrategy& strategy, DirectoryScanner& scanner) noexcept {
@@ -331,7 +331,7 @@ Backup::Statistics Backup::CreateBackup(const std::vector<Path>& src, const Path
 		std::vector<Match> copy;
 		std::vector<Match> extra;
 		copy.reserve(srcDirectories.size());
-		extra.reserve(max_difference_0(dstDirectories.size(), srcDirectories.size()));
+		extra.reserve(MaxOfDifferenceAndZero(dstDirectories.size(), srcDirectories.size()));
 		ThreeWayMerge(srcDirectories, refDirectories, dstDirectories, copy, extra, CompareName);
 		if (copy.size() != filenames.size() || std::any_of(copy.cbegin(), copy.cend(), [](const Match& match) noexcept {
 				return !match.src.has_value();
@@ -449,7 +449,7 @@ void Backup::CopyDirectories(const std::optional<Path>& optionalSrc, const std::
 		std::vector<Match> extraDirectories;
 		// Heuristics for sizing the lists
 		copyDirectories.reserve(srcDirectories[readIndex].size());
-		extraDirectories.reserve(max_difference_0(dstDirectories[readIndex].size(), srcDirectories[readIndex].size()));
+		extraDirectories.reserve(MaxOfDifferenceAndZero(dstDirectories[readIndex].size(), srcDirectories[readIndex].size()));
 
 		ThreeWayMerge(srcDirectories[readIndex], refDirectories[readIndex], dstDirectories[readIndex], copyDirectories, extraDirectories, CompareName);
 
@@ -471,7 +471,7 @@ void Backup::CopyDirectories(const std::optional<Path>& optionalSrc, const std::
 		std::vector<Match> extraFiles;
 		// Heuristics for sizing the lists
 		copyFiles.reserve(srcFiles[readIndex].size());
-		extraFiles.reserve(max_difference_0(dstFiles[readIndex].size(), srcFiles[readIndex].size()));
+		extraFiles.reserve(MaxOfDifferenceAndZero(dstFiles[readIndex].size(), srcFiles[readIndex].size()));
 
 		ThreeWayMerge(srcFiles[readIndex], refFiles[readIndex], dstFiles[readIndex], copyFiles, extraFiles, CompareName);
 

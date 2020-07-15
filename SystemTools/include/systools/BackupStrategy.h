@@ -24,6 +24,12 @@ limitations under the License.
 
 #include <vector>
 
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef CreateDirectory
+#undef CreateHardLink
+#endif
+
 namespace systools {
 
 class Path;

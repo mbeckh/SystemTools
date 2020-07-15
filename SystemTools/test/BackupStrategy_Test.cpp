@@ -21,17 +21,43 @@ limitations under the License.
 #include "systools/FileComparer.h"
 #include "systools/Path.h"
 
+#include <llamalog/llamalog.h>
 #include <m3c/Handle.h>
 #include <m3c/exception.h>
-#include <m4t/m4t.h>
 
+#include <fmt/core.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include <accctrl.h>
 #include <aclapi.h>
 #include <detours_gmock.h>
+#include <objidl.h>
 #include <shobjidl.h>
 #include <strsafe.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <memory>
+#include <new>
+#include <ostream>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <tuple>
+#include <vector>
+
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef CreateDirectory
+#undef CreateHardLink
+#undef GetSystemDirectory
+#endif
 
 namespace systools::test {
 
@@ -54,7 +80,9 @@ MATCHER_P(PathIs, path, "") {
 	} else if constexpr (std::is_convertible_v<path_type, const Path&>) {
 		return arg == path;
 	} else {
+#ifndef __clang_analyzer__
 		static_assert(false);
+#endif
 	}
 }
 
@@ -434,7 +462,7 @@ TYPED_TEST(BackupStrategy_Test, CreateDirectory_Create_Return) {
 	const Path path(this->m_name);
 	const Path templatePath(LR"(Q:\foo)");
 
-	void* const ptr = new std::string("bar");
+	std::string* const ptr = new std::string("bar");
 
 	if constexpr (!std::is_same_v<TypeParam, DryRunBackupStrategy>) {
 		EXPECT_CALL(this->m_win32, CreateDirectoryExW(t::StrEq(templatePath.c_str()), t::StrEq(path.c_str()), t::Pointee(t::Field(&SECURITY_ATTRIBUTES::lpSecurityDescriptor, ptr))))

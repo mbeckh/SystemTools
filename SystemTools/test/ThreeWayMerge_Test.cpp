@@ -16,8 +16,13 @@ limitations under the License.
 
 #include "systools/ThreeWayMerge.h"
 
-#include <algorithm>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include <exception>
 #include <optional>
+#include <ostream>
+#include <utility>
 #include <vector>
 
 namespace systools::test {

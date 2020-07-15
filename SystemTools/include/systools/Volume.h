@@ -32,8 +32,11 @@ namespace systools {
 class Path;
 
 class Volume {
+private:
+	static constexpr std::uint16_t kInlineBufferSize = 8;
+
 public:
-	using string_type = m3c::lazy_wstring<8>;
+	using string_type = m3c::lazy_wstring<kInlineBufferSize>;
 
 public:
 	Volume(const Path& path);

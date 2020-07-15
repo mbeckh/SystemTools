@@ -16,6 +16,7 @@ limitations under the License.
 
 #include "TestUtils.h"
 
+#include <llamalog/llamalog.h>
 #include <m3c/exception.h>
 #include <m3c/string_encode.h>
 
@@ -23,8 +24,19 @@ limitations under the License.
 
 #include <windows.h>
 
+#include <cassert>
+#include <cmath>
+#include <iomanip>
 #include <numeric>
+#include <ostream>
 #include <random>
+#include <string>
+#include <type_traits>
+
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef GetSystemDirectory
+#endif
 
 namespace systools {
 

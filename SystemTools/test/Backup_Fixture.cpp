@@ -18,21 +18,25 @@ limitations under the License.
 
 #include "BackupFileSystem_Fake.h"
 #include "BackupStrategy_Mock.h"
-#include "TestUtils.h"
 #include "systools/Backup.h"
 #include "systools/BackupStrategy.h"
 #include "systools/DirectoryScanner.h"
 #include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/lazy_string.h>
 
-#include <gtest/gtest-spi.h>
+#include <gtest/gtest-spi.h>  // IWYU pragma: keep
 
-#include <aclapi.h>
 #include <detours_gmock.h>
 
-#include <array>
+#include <algorithm>
+#include <exception>
+#include <memory>
+#include <new>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 
 
 namespace testing {

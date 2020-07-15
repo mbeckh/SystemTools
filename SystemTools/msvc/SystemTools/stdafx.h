@@ -18,5 +18,40 @@ limitations under the License.
 
 #pragma once
 
+#include <fmt/core.h>
+#include <fmt/format.h>
 
+#include <accctrl.h>
+#include <aclapi.h>
+#include <objbase.h>
+#include <pathcch.h>
+#include <sal.h>
+#include <shellapi.h>
+#include <shobjidl.h>
+#include <strsafe.h>
 #include <windows.h>
+#include <winioctl.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cassert>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <cwchar>
+#include <exception>
+#include <functional>
+#include <memory>
+#include <new>
+#include <numeric>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>

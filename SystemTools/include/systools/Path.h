@@ -26,6 +26,7 @@ limitations under the License.
 
 #include <compare>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -42,8 +43,11 @@ class LogLine;
 namespace systools {
 
 class Filename {
+private:
+	static constexpr std::uint16_t kInlineBufferSize = 32;
+
 public:
-	using string_type = m3c::lazy_wstring<32>;
+	using string_type = m3c::lazy_wstring<kInlineBufferSize>;
 
 public:
 	Filename(const Filename& oth) = default;
@@ -132,8 +136,11 @@ private:
 };
 
 class Path {
+private:
+	static constexpr std::uint16_t kInlineBufferSize = 128;
+
 public:
-	using string_type = m3c::lazy_wstring<128>;
+	using string_type = m3c::lazy_wstring<kInlineBufferSize>;
 
 public:
 	Path(const Path&) = default;

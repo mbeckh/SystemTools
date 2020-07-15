@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "systools/Path.h"
 
+#include <llamalog/LogLine.h>
 #include <llamalog/llamalog.h>
 #include <m3c/Handle.h>
 #include <m3c/exception.h>
@@ -30,8 +31,8 @@ limitations under the License.
 #include <strsafe.h>
 #include <windows.h>
 
-#include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cwchar>
 #include <exception>
@@ -170,7 +171,7 @@ Path::Path(const std::wstring& path)
 
 Path::Path(const std::wstring_view& path)
 	// std::basic_string_view is not required to be null-terminated
-	: Path(m3c::lazy_wstring<128>(path).c_str(), path.size()) {
+	: Path(string_type(path).c_str(), path.size()) {
 	// empty
 }
 

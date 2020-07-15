@@ -20,13 +20,26 @@ limitations under the License.
 #include "systools/Path.h"
 #include "systools/Volume.h"
 
+#include <llamalog/llamalog.h>
 #include <m3c/Handle.h>
-#include <m4t/m4t.h>
+#include <m3c/exception.h>
+
+#include <fmt/core.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include <detours_gmock.h>
+#include <windows.h>
 
 #include <algorithm>
+#include <atomic>
+#include <cassert>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <new>
+#include <string>
+#include <tuple>
 
 
 namespace systools::test {
@@ -146,7 +159,7 @@ protected:
 					return 512u;
 				}
 				assert(false);
-				_assume(false);
+				__assume(0);
 			}));
 		ON_CALL(m_volume, GetUnbufferedMemoryAlignment())
 			.WillByDefault(WITH_LATENCY(4ms, 12ms, [this] {
@@ -158,7 +171,7 @@ protected:
 					return static_cast<std::align_val_t>(4096);
 				}
 				assert(false);
-				_assume(false);
+				__assume(0);
 			}));
 	}
 

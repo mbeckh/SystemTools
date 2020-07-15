@@ -60,6 +60,7 @@ struct FileComparer::Context {
 	std::exception_ptr exceptionPtr[2];
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init): m_pContext is initialized when actually comparing.
 FileComparer::FileComparer()
 	: m_state{State::kIdle, State::kIdle}
 	, m_thread{std::thread(
@@ -139,7 +140,7 @@ bool FileComparer::Compare(const Path& src, const Path& cpy) {
 	}
 	m_clients.notify_all();
 
-	bool result;
+	bool result;  //NOLINT(cppcoreguidelines-init-variables): result is initialized in try block.
 	try {
 		result = CompareFiles(context);
 	} catch (...) {
@@ -188,8 +189,8 @@ bool FileComparer::CompareFiles(Context& context) {
 			__assume(false);
 		}
 
-		std::uint_fast32_t size;
-		if ((size = context.size[readIndex][0].load(std::memory_order_relaxed)) != context.size[readIndex][1].load(std::memory_order_relaxed)) {
+		const std::uint_fast32_t size = context.size[readIndex][0].load(std::memory_order_relaxed);
+		if (size != context.size[readIndex][1].load(std::memory_order_relaxed)) {
 			LOG_TRACE("Files differ in size for buffer {}: {} / {}, aborting", readIndex, size, context.size[readIndex][1].load(std::memory_order_relaxed));
 			{
 				m3c::scoped_lock lock(m_mutex);
@@ -295,7 +296,7 @@ void FileComparer::ReadFileContent(const std::uint_fast8_t index) noexcept {
 				return;
 			}
 
-			DWORD bytesRead;
+			DWORD bytesRead;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 			if (!ReadFile(hFile, m_pContext->buffer[writeIndex][index], m_pContext->bufferSize, &bytesRead, nullptr)) {
 				THROW(m3c::windows_exception(GetLastError()), "ReadFile {}", m_pContext->path[index]);
 			}

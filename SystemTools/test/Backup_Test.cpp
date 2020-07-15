@@ -16,11 +16,38 @@ limitations under the License.
 
 #include "systools/Backup.h"
 
+#include "BackupFileSystem_Fake.h"
 #include "Backup_Fixture.h"
-#include "TestUtils.h"
+#include "systools/BackupStrategy.h"
+#include "systools/DirectoryScanner.h"
+#include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
 
+#include <fmt/core.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include <windows.h>
+
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <iterator>
+#include <memory>
+#include <ostream>
+#include <stdexcept>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace systools {
+class FileComparer;
+}
 /// @file
 /// @brief Test cases for the `systools::Backup` class.
 /// @details The following names are used in the tests.

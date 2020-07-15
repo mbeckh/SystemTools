@@ -20,11 +20,27 @@ limitations under the License.
 #include "systools/DirectoryScanner.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/lazy_string.h>
 #include <m3c/string_encode.h>
 
-#include <numeric>
-#include <ostream>
+#include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <exception>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <new>
 #include <random>
+#include <string_view>
+#include <utility>
+
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef CreateDirectory
+#undef CreateHardLink
+#endif
 
 namespace systools::test {
 
