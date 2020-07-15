@@ -66,14 +66,12 @@ FileComparer::FileComparer()
 	, m_thread{std::thread(
 				   [](FileComparer* const pComparer) noexcept {
 					   pComparer->Run(0);
-				   }  // namespace systools
-				   ,
+				   },
 				   this),
 			   std::thread(
 				   [](FileComparer* const pComparer) noexcept {
 					   pComparer->Run(1);
-				   }  // namespace systools
-				   ,
+				   },
 				   this)} {
 }
 

@@ -36,13 +36,13 @@ private:
 	static constexpr std::uint16_t kInlineBufferSize = 8;
 
 public:
-	using string_type = m3c::lazy_wstring<kInlineBufferSize>;
+	using string_type = m3c::lazy_wstring<kInlineBufferSize>;  // NOLINT(readability-identifier-naming): Follow naming of STL and lazy_wstring.
 
 public:
-	Volume(const Path& path);
+	explicit Volume(const Path& path);
 
 public:
-	const string_type& GetName() const noexcept {
+	[[nodiscard]] const string_type& GetName() const noexcept {
 		return m_name;
 	}
 	SYSTOOLS_NO_INLINE std::uint32_t GetUnbufferedFileOffsetAlignment();

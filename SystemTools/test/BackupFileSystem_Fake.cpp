@@ -361,7 +361,7 @@ void BackupFileSystem_Fake::Scan(const Path& path, std::vector<ScannedFile>& dir
 		for (const Path& pathEntry : it->second) {
 			const BackupFileSystem_Fake::Entry& entry = m_files.at(pathEntry);
 			ScannedFile_Fake fakeFile(entry);
-			if (filter.Accept(entry.filename)) {
+			if (filter.Accept(Filename(entry.filename))) {
 				if (entry.IsDirectory()) {
 					directories.push_back(std::move(fakeFile));
 				} else {

@@ -37,7 +37,13 @@ private:
 
 public:
 	FileComparer();
+	FileComparer(const FileComparer&) = delete;
+	FileComparer(FileComparer&&) = delete;
 	~FileComparer() noexcept;
+
+public:
+	FileComparer& operator=(const FileComparer&) = delete;
+	FileComparer& operator=(FileComparer&&) = delete;
 
 public:
 	bool Compare(const Path& src, const Path& cpy);
@@ -54,8 +60,8 @@ private:
 	m3c::mutex m_mutex;
 	m3c::condition_variable m_clients;
 	m3c::condition_variable m_master;
-	std::atomic<State> m_state[2];
-	std::thread m_thread[2];
+	std::atomic<State> m_state[2];  // NOLINT(modernize-use-default-member-init): Keep code out of the header.
+	std::thread m_thread[2];        // NOLINT(modernize-use-default-member-init): Keep code out of the header.
 };
 
 }  // namespace systools
