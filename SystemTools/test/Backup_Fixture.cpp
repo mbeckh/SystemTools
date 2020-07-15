@@ -631,6 +631,7 @@ TEST_F(Backup_Fixture_Test, CheckSetup_Removed) {
 		Folder(L"FolderRef").disableExpect().ref(),
 		Folder(L"FolderDst").disableExpect().dst());
 
+	// check for a particular error message, therefore requires #include TestUtils.h
 	EXPECT_NONFATAL_FAILURE(RunVerified({}, [this](const auto&) { m_fileSystem.Delete(m_src / L"FolderSrc"); }), "FolderSrc");
 	EXPECT_NONFATAL_FAILURE(RunVerified({}, [this](const auto&) { m_fileSystem.Delete(m_ref / L"FolderRef"); }), "FolderRef");
 	EXPECT_NONFATAL_FAILURE(RunVerified({}, [this](const auto&) { m_fileSystem.Delete(m_dst / L"FolderDst"); }), "FolderDst");

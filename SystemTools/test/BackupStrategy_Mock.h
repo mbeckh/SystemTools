@@ -16,11 +16,9 @@ limitations under the License.
 
 #pragma once
 
-#include "TestUtils.h"  // IWYU pragma: keep
 #include "systools/BackupStrategy.h"
 #include "systools/DirectoryScanner.h"
 #include "systools/FileComparer.h"  // IWYU pragma: keep
-#include "systools/Path.h"          // IWYU pragma: keep
 
 #include <gmock/gmock.h>
 
@@ -31,6 +29,10 @@ limitations under the License.
 #undef CreateDirectory
 #undef CreateHardLink
 #endif
+
+namespace systools {
+class Path;
+}  // namespace systools
 
 namespace systools::test {
 
