@@ -132,7 +132,7 @@ public:
 	[[nodiscard]] const wchar_t* c_str() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_filename.c_str();
 	}
-	[[nodiscard]] const std::size_t size() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
+	[[nodiscard]] std::size_t size() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_filename.size();
 	}
 	[[nodiscard]] bool IsSameStringAs(const Filename& filename) const noexcept;
@@ -279,7 +279,7 @@ public:
 	}
 
 public:
-	[[nodiscard]] const std::wstring_view sv() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
+	[[nodiscard]] std::wstring_view sv() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_path.sv();
 	}
 	[[nodiscard]] const string_type& str() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL(-like) types.
@@ -288,7 +288,7 @@ public:
 	[[nodiscard]] const wchar_t* c_str() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_path.c_str();
 	}
-	[[nodiscard]] const std::size_t size() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
+	[[nodiscard]] std::size_t size() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_path.size();
 	}
 
