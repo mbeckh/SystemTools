@@ -33,7 +33,7 @@ Checks: '
     -readability-qualified-auto,
     -readability-redundant-access-specifiers'
 WarningsAsErrors: ''
-HeaderFilterRegex: 'SystemTools[\/\\]SystemTools[\/\\](src|include)[\/\\].*'
+HeaderFilterRegex: 'SystemTools[\/\\](src|include)[\/\\].*'
 ExtraArgsBefore: [
   '--system-header-prefix=lib/', '-xc++', '-std=c++20', 
   '-WCL4', '-Wpedantic', '-Wthread-safety', '-Wmicrosoft', '-Wdocumentation', '-Wdocumentation-pedantic', '-Wtautological-compare',

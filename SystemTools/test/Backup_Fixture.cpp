@@ -18,21 +18,26 @@ limitations under the License.
 
 #include "BackupFileSystem_Fake.h"
 #include "BackupStrategy_Mock.h"
-#include "TestUtils.h"
+#include "TestUtils.h"  // IWYU pragma: keep
 #include "systools/Backup.h"
 #include "systools/BackupStrategy.h"
 #include "systools/DirectoryScanner.h"
 #include "systools/Path.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/lazy_string.h>
 
-#include <gtest/gtest-spi.h>
+#include <gtest/gtest-spi.h>  // IWYU pragma: keep
 
-#include <aclapi.h>
 #include <detours_gmock.h>
 
-#include <array>
+#include <algorithm>
+#include <exception>
+#include <memory>
+#include <new>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 
 
 namespace testing {
@@ -626,6 +631,7 @@ TEST_F(Backup_Fixture_Test, CheckSetup_Removed) {
 		Folder(L"FolderRef").disableExpect().ref(),
 		Folder(L"FolderDst").disableExpect().dst());
 
+	// check for a particular error message, therefore requires #include TestUtils.h
 	EXPECT_NONFATAL_FAILURE(RunVerified({}, [this](const auto&) { m_fileSystem.Delete(m_src / L"FolderSrc"); }), "FolderSrc");
 	EXPECT_NONFATAL_FAILURE(RunVerified({}, [this](const auto&) { m_fileSystem.Delete(m_ref / L"FolderRef"); }), "FolderRef");
 	EXPECT_NONFATAL_FAILURE(RunVerified({}, [this](const auto&) { m_fileSystem.Delete(m_dst / L"FolderDst"); }), "FolderDst");

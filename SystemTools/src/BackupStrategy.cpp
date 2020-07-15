@@ -26,7 +26,6 @@ limitations under the License.
 #include <m3c/Handle.h>
 #include <m3c/com_ptr.h>
 #include <m3c/exception.h>
-#include <m3c/lazy_string.h>
 
 #include <accctrl.h>
 #include <aclapi.h>
@@ -146,7 +145,7 @@ void WritingBackupStrategy::SetAttributes(const Path& path, const ScannedFile& a
 void WritingBackupStrategy::SetSecurity(const Path& path, const ScannedFile& securitySource) const {
 	constexpr SECURITY_INFORMATION kSecurityInformation = ATTRIBUTE_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION | SCOPE_SECURITY_INFORMATION | UNPROTECTED_DACL_SECURITY_INFORMATION | UNPROTECTED_SACL_SECURITY_INFORMATION;
 	// for some reason, the first argument to SetNamedSecurityInfoW is _writable_
-	m3c::lazy_wstring<128> writablePath(path.sv());
+	Path::string_type writablePath(path.sv());
 	const ScannedFile::Security& security = securitySource.GetSecurity();
 	const DWORD result = SetNamedSecurityInfoW(writablePath.data(), SE_FILE_OBJECT, kSecurityInformation, security.pOwner, security.pGroup, security.pDacl, security.pSacl);
 	if (result != ERROR_SUCCESS) {

@@ -26,6 +26,7 @@ limitations under the License.
 
 #include <compare>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -37,56 +38,59 @@ limitations under the License.
 
 namespace llamalog {
 class LogLine;
-}
+}  // namespace llamalog
 
 namespace systools {
 
 class Filename {
+private:
+	static constexpr std::uint16_t kInlineBufferSize = 32;
+
 public:
-	using string_type = m3c::lazy_wstring<32>;
+	using string_type = m3c::lazy_wstring<kInlineBufferSize>;  // NOLINT(readability-identifier-naming): Follow naming of STL and lazy_wstring.
 
 public:
 	Filename(const Filename& oth) = default;
 	Filename(Filename&& oth) noexcept = default;
 
-	Filename(const wchar_t* filename);
+	explicit Filename(const wchar_t* filename);
 	Filename(const wchar_t* filename, const std::size_t length)
 		: m_filename(filename, length) {
 		// empty
 	}
 
-	Filename(const std::wstring& filename)
+	explicit Filename(const std::wstring& filename)
 		: m_filename(filename) {
 		// empty
 	}
-	Filename(std::wstring&& filename) noexcept
+	explicit Filename(std::wstring&& filename) noexcept
 		: m_filename(std::move(filename)) {
 		// empty
 	}
 
-	Filename(const std::wstring_view& filename)
+	explicit Filename(const std::wstring_view& filename)
 		: m_filename(filename) {
 		// empty
 	}
 
-	Filename(string_type& filename)
+	explicit Filename(string_type& filename)
 		: m_filename(filename) {
 		// empty
 	}
 
-	Filename(string_type&& filename) noexcept
+	explicit Filename(string_type&& filename) noexcept
 		: m_filename(std::move(filename)) {
 		// empty
 	}
 
 	template <std::uint16_t kSize>
-	Filename(const m3c::lazy_wstring<kSize>& filename)
+	explicit Filename(const m3c::lazy_wstring<kSize>& filename)
 		: m_filename(filename) {
 		// empty
 	}
 
 	template <std::uint16_t kSize>
-	Filename(m3c::lazy_wstring<kSize>&& filename)
+	explicit Filename(m3c::lazy_wstring<kSize>&& filename)
 		: m_filename(std::move(filename)) {
 		// empty
 	}
@@ -95,45 +99,62 @@ public:
 
 public:
 	Filename& operator=(const Filename& oth) = default;
-
 	Filename& operator=(Filename&& oth) noexcept = default;
 
 	[[nodiscard]] bool operator==(const Filename& filename) const {
 		return (*this <=> filename) == 0;
 	}
 
+	[[nodiscard]] bool operator==(const wchar_t* const filename) const {
+		return (*this <=> filename) == 0;
+	}
+
+	[[nodiscard]] bool operator==(const std::wstring& filename) const {
+		return (*this <=> filename) == 0;
+	}
+
+	[[nodiscard]] bool operator==(const std::wstring_view& filename) const {
+		return (*this <=> filename) == 0;
+	}
+
 	[[nodiscard]] std::weak_ordering operator<=>(const Filename& filename) const;
+	[[nodiscard]] std::weak_ordering operator<=>(const wchar_t* filename) const;
+	[[nodiscard]] std::weak_ordering operator<=>(const std::wstring& filename) const;
+	[[nodiscard]] std::weak_ordering operator<=>(const std::wstring_view& filename) const;
 
 public:
-	[[nodiscard]] std::wstring_view sv() const noexcept {
+	[[nodiscard]] std::wstring_view sv() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_filename.sv();
 	}
-	[[nodiscard]] const string_type& str() const noexcept {
+	[[nodiscard]] const string_type& str() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL(-like) types.
 		return m_filename;
 	}
-	[[nodiscard]] const wchar_t* c_str() const noexcept {
+	[[nodiscard]] const wchar_t* c_str() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_filename.c_str();
 	}
-	[[nodiscard]] const std::size_t size() const noexcept {
+	[[nodiscard]] std::size_t size() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_filename.size();
 	}
 	[[nodiscard]] bool IsSameStringAs(const Filename& filename) const noexcept;
 
 	/// @brief Swap two objects.
 	/// @param filename The other `Filename`.
-	void swap(Filename& filename) noexcept;
+	void swap(Filename& filename) noexcept;  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 
 	/// @brief Get a hash value for the object.
 	/// @return A hash value calculated based on the string value.
-	[[nodiscard]] std::size_t hash() const noexcept;
+	[[nodiscard]] std::size_t hash() const noexcept;  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 
 private:
 	string_type m_filename;
 };
 
 class Path {
+private:
+	static constexpr std::uint16_t kInlineBufferSize = 128;
+
 public:
-	using string_type = m3c::lazy_wstring<128>;
+	using string_type = m3c::lazy_wstring<kInlineBufferSize>;  // NOLINT(readability-identifier-naming): Follow naming of STL and lazy_wstring.
 
 public:
 	Path(const Path&) = default;
@@ -141,34 +162,34 @@ public:
 
 	/// @brief Creates a new path from a null-terminated C-string.
 	/// @param path The pointer to the null-terminated C-string.
-	Path(_In_z_ const wchar_t* path);
+	explicit Path(_In_z_ const wchar_t* path);
 
 	/// @brief Creates a new path from a `std::wstring`.
 	/// @param path The `std::wstring` object.
-	Path(const std::wstring& path);
+	explicit Path(const std::wstring& path);
 
 	/// @brief Creates a new path from a `std::wstring_view`.
 	/// @param path The `std::wstring_view` object.
-	Path(const std::wstring_view& path);
+	explicit Path(const std::wstring_view& path);
 
-	Path(string_type& path)
+	explicit Path(string_type& path)
 		: m_path(path) {
 		// empty
 	}
 
-	Path(string_type&& path) noexcept
+	explicit Path(string_type&& path) noexcept
 		: m_path(std::move(path)) {
 		// empty
 	}
 
 	template <std::size_t kSize>
-	Path(const m3c::lazy_wstring<kSize>& path)
+	explicit Path(const m3c::lazy_wstring<kSize>& path)
 		: m_path(path) {
 		// empty
 	}
 
 	template <std::size_t kSize>
-	Path(m3c::lazy_wstring<kSize>&& path)
+	explicit Path(m3c::lazy_wstring<kSize>&& path)
 		: m_path(std::move(path)) {
 		// empty
 	}
@@ -206,6 +227,10 @@ public:
 		return (*this <=> path) == 0;
 	}
 
+	[[nodiscard]] bool operator==(const wchar_t* const path) const {
+		return (*this <=> path) == 0;
+	}
+
 	[[nodiscard]] bool operator==(const std::wstring& path) const {
 		return (*this <=> path) == 0;
 	}
@@ -215,6 +240,7 @@ public:
 	}
 
 	[[nodiscard]] std::weak_ordering operator<=>(const Path& path) const;
+	[[nodiscard]] std::weak_ordering operator<=>(const wchar_t* path) const;
 	[[nodiscard]] std::weak_ordering operator<=>(const std::wstring& path) const;
 	[[nodiscard]] std::weak_ordering operator<=>(const std::wstring_view& path) const;
 
@@ -227,8 +253,8 @@ public:
 	[[nodiscard]] Path operator/(const std::wstring_view& sub) const;
 	[[nodiscard]] Path operator/(const Filename& sub) const;
 
-	Path& operator+=(const wchar_t append);
-	Path& operator+=(_In_z_ const wchar_t* const append);
+	Path& operator+=(wchar_t append);
+	Path& operator+=(_In_z_ const wchar_t* append);
 	Path& operator+=(const std::wstring& append);
 	Path& operator+=(const std::wstring_view& append);
 	Path& operator+=(const Filename& append);
@@ -239,8 +265,8 @@ public:
 		return *this = std::move(*this + append);
 	}
 
-	[[nodiscard]] Path operator+(const wchar_t append) const;
-	[[nodiscard]] Path operator+(_In_z_ const wchar_t* const append) const;
+	[[nodiscard]] Path operator+(wchar_t append) const;
+	[[nodiscard]] Path operator+(_In_z_ const wchar_t* append) const;
 	[[nodiscard]] Path operator+(const std::wstring& append) const;
 	[[nodiscard]] Path operator+(const std::wstring_view& append) const;
 	[[nodiscard]] Path operator+(const Filename& append) const;
@@ -253,16 +279,16 @@ public:
 	}
 
 public:
-	[[nodiscard]] const std::wstring_view sv() const noexcept {
+	[[nodiscard]] std::wstring_view sv() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_path.sv();
 	}
-	[[nodiscard]] const string_type& str() const noexcept {
+	[[nodiscard]] const string_type& str() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL(-like) types.
 		return m_path;
 	}
-	[[nodiscard]] const wchar_t* c_str() const noexcept {
+	[[nodiscard]] const wchar_t* c_str() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_path.c_str();
 	}
-	[[nodiscard]] const std::size_t size() const noexcept {
+	[[nodiscard]] std::size_t size() const noexcept {  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 		return m_path.size();
 	}
 
@@ -275,12 +301,12 @@ public:
 
 	/// @brief Swap two objects.
 	/// @param path The other `Path`.
-	void swap(Path& path) noexcept;
+	void swap(Path& path) noexcept;  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 
 
 	/// @brief Get a hash value for the object.
 	/// @return A hash value calculated based on the string value.
-	[[nodiscard]] std::size_t hash() const noexcept;
+	[[nodiscard]] std::size_t hash() const noexcept;  // NOLINT(readability-identifier-naming): Naming relates to STL types.
 
 private:
 	string_type m_path;
@@ -289,14 +315,14 @@ private:
 /// @brief Swap function.
 /// @param filename A `Filename` object.
 /// @param oth Another `Filename` object.
-inline void swap(Filename& filename, Filename& oth) noexcept {
+inline void swap(Filename& filename, Filename& oth) noexcept {  // NOLINT(readability-identifier-naming): Specialization for std::swap.
 	filename.swap(oth);
 }
 
 /// @brief Swap function.
 /// @param path A `Path` object.
 /// @param oth Another `Path` object.
-inline void swap(Path& path, Path& oth) noexcept {
+inline void swap(Path& path, Path& oth) noexcept {  // NOLINT(readability-identifier-naming): Specialization for std::swap.
 	path.swap(oth);
 }
 
@@ -305,7 +331,7 @@ llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const Path& path);
 
 namespace internal {
 
-struct filesystem_base_formatter {
+struct FilesystemBaseFormatter {
 	/// @brief Parse the format string.
 	/// @param ctx see `fmt::formatter::parse`.
 	/// @return see `fmt::formatter::parse`.
@@ -339,7 +365,7 @@ struct std::hash<systools::Path> {
 };
 
 template <>
-struct fmt::formatter<systools::Filename> : public systools::internal::filesystem_base_formatter {
+struct fmt::formatter<systools::Filename> : public systools::internal::FilesystemBaseFormatter {
 	/// @brief Format the `Filename`.
 	/// @param arg A `Filename`.
 	/// @param ctx see `fmt::formatter::format`.
@@ -348,7 +374,7 @@ struct fmt::formatter<systools::Filename> : public systools::internal::filesyste
 };
 
 template <>
-struct fmt::formatter<systools::Path> : public systools::internal::filesystem_base_formatter {
+struct fmt::formatter<systools::Path> : public systools::internal::FilesystemBaseFormatter {
 	/// @brief Format the `Path`.
 	/// @param arg A `Path`.
 	/// @param ctx see `fmt::formatter::format`.

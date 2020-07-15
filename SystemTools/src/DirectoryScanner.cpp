@@ -80,7 +80,7 @@ void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, Dire
 			{
 				Filename name(pCurrent->FileName, pCurrent->FileNameLength / sizeof(WCHAR));
 				const Path filePath = path / name;
-				const bool directory = pCurrent->FileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+				const bool directory = (pCurrent->FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
 				if (!filter.Accept(name)) {
 					goto next;
@@ -208,8 +208,8 @@ void ScanDirectory(const Path& path, DirectoryScanner::Result& directories, Dire
 		   && EqualTrustee(lhs.Trustee, rhs.Trustee);
 }
 
-[[nodiscard]] bool EqualAcl(const PACL pLhs, const PACL pRhs) {
-	PEXPLICIT_ACCESS_W ptr;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
+[[nodiscard]] bool EqualAcl(const PACL pLhs, const PACL pRhs) {  // NOLINT(misc-misplaced-const): Applying const to pointer is desired.
+	PEXPLICIT_ACCESS_W ptr;                                      // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 
 	ULONG lhsEntries;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
 	const DWORD lhsResult = GetExplicitEntriesFromAclW(pLhs, &lhsEntries, &ptr);

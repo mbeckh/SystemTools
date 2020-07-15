@@ -16,6 +16,12 @@ limitations under the License.
 
 #include "BackupStrategy_Mock.h"
 
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef CreateDirectory
+#undef CreateHardLink
+#endif
+
 namespace systools::test {
 
 BackupStrategy_Mock::BackupStrategy_Mock() {

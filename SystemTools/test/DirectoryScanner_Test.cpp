@@ -18,19 +18,40 @@ limitations under the License.
 
 #include "TestUtils.h"
 
-#include <m3c/Exception.h>
+#include <llamalog/llamalog.h>
 #include <m3c/Handle.h>
-#include <m4t/m4t.h>
+#include <m3c/exception.h>
 
+#include <fmt/core.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 #include <systools/Path.h>
 
+#include <accctrl.h>
 #include <aclapi.h>
 #include <detours_gmock.h>
 #include <sddl.h>
 #include <strsafe.h>
+#include <windows.h>
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <tuple>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef GetSystemDirectory
+#endif
 
 namespace systools::test {
 
@@ -460,7 +481,7 @@ TEST(DirectoryScanner_RealTest, Scan_SystemFolder_ReturnResult) {
 
 	DirectoryScanner::Result directories;
 	DirectoryScanner::Result files;
-	scanner.Scan(TestUtils::GetSystemDirectoryW(), directories, files, DirectoryScanner::Flags::kDefault, kAcceptAllScannerFilter);
+	scanner.Scan(TestUtils::GetSystemDirectory(), directories, files, DirectoryScanner::Flags::kDefault, kAcceptAllScannerFilter);
 	scanner.Wait();
 
 	EXPECT_THAT(directories, t::SizeIs(t::Gt(0)));
@@ -479,7 +500,7 @@ TEST(DirectoryScanner_RealTest, Scan_SystemFolderFiltered_ReturnResult) {
 	const LambdaScannerFilter filter([](const Filename &name) {
 		return name != L"drivers" && name != L"kernel32.dll";
 	});
-	scanner.Scan(TestUtils::GetSystemDirectoryW(), directories, files, DirectoryScanner::Flags::kDefault, filter);
+	scanner.Scan(TestUtils::GetSystemDirectory(), directories, files, DirectoryScanner::Flags::kDefault, filter);
 	scanner.Wait();
 
 	EXPECT_THAT(directories, t::SizeIs(t::Gt(0)));
@@ -641,7 +662,7 @@ TEST_P(DirectoryScanner_Test, Scan_DirectoriesFiles_ReturnResult) {
 
 		DirectoryScanner::Result directories;
 		DirectoryScanner::Result files;
-		const LambdaScannerFilter filter([](const Filename &name) {
+		const LambdaScannerFilter filter([kSkipIndex](const Filename &name) {
 			return name.sv() != fmt::format(L"dir_{}", kSkipIndex) && name.sv() != fmt::format(L"file_{}.ext", kSkipIndex);
 		});
 		DirectoryScanner::Flags flags = DirectoryScanner::Flags::kDefault;

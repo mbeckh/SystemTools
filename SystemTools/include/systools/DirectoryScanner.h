@@ -36,13 +36,14 @@ namespace systools {
 
 class ScannedFile {
 public:
-	class Stream {
+	class Stream {  // NOLINT(cppcoreguidelines-pro-type-member-init): Default constructor only required for vector.
 	public:
-		using name_type = m3c::lazy_wstring<32>;  ///< @brief name is case sensitive
+		/// @brief name is case sensitive
+		using name_type = Filename::string_type;  // NOLINT(readability-identifier-naming): Follow naming of STL and lazy_wstring.
 
 	public:
 		Stream() noexcept = default;
-		Stream(name_type&& name, const LARGE_INTEGER size, const ULONG attributes) noexcept;
+		Stream(name_type&& name, LARGE_INTEGER size, ULONG attributes) noexcept;
 		Stream(const Stream&) = default;
 		Stream(Stream&&) noexcept = default;
 		~Stream() noexcept = default;
@@ -92,7 +93,7 @@ public:
 
 public:
 	ScannedFile() noexcept = delete;
-	ScannedFile(Filename&& name, const LARGE_INTEGER size, const LARGE_INTEGER creationTime, const LARGE_INTEGER lastWriteTime, const ULONG attributes, const FILE_ID_128& fileId, std::vector<Stream>&& streams) noexcept;
+	ScannedFile(Filename&& name, LARGE_INTEGER size, LARGE_INTEGER creationTime, LARGE_INTEGER lastWriteTime, ULONG attributes, const FILE_ID_128& fileId, std::vector<Stream>&& streams) noexcept;
 	ScannedFile(const ScannedFile&) = default;
 	ScannedFile(ScannedFile&&) noexcept = default;
 	~ScannedFile() noexcept = default;
@@ -168,7 +169,7 @@ public:
 template <typename F>
 class LambdaScannerFilter final : public ScannerFilter {
 public:
-	LambdaScannerFilter(F lambda) noexcept
+	explicit LambdaScannerFilter(F lambda) noexcept
 		: m_lambda(std::move(lambda)) {
 		// empty
 	}
@@ -189,7 +190,7 @@ private:
 	F m_lambda;
 };
 
-static const LambdaScannerFilter kAcceptAllScannerFilter([](const Filename&) noexcept { return true; });
+static const LambdaScannerFilter kAcceptAllScannerFilter([](const Filename& /* filename */) noexcept { return true; });
 
 class DirectoryScanner {
 public:

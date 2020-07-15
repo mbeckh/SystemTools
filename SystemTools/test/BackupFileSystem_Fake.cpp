@@ -20,11 +20,27 @@ limitations under the License.
 #include "systools/DirectoryScanner.h"
 
 #include <llamalog/llamalog.h>
+#include <m3c/lazy_string.h>
 #include <m3c/string_encode.h>
 
-#include <numeric>
-#include <ostream>
+#include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <exception>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <new>
 #include <random>
+#include <string_view>
+#include <utility>
+
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef CreateDirectory
+#undef CreateHardLink
+#endif
 
 namespace systools::test {
 
@@ -345,7 +361,7 @@ void BackupFileSystem_Fake::Scan(const Path& path, std::vector<ScannedFile>& dir
 		for (const Path& pathEntry : it->second) {
 			const BackupFileSystem_Fake::Entry& entry = m_files.at(pathEntry);
 			ScannedFile_Fake fakeFile(entry);
-			if (filter.Accept(entry.filename)) {
+			if (filter.Accept(Filename(entry.filename))) {
 				if (entry.IsDirectory()) {
 					directories.push_back(std::move(fakeFile));
 				} else {

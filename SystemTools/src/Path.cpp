@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "systools/Path.h"
 
+#include <llamalog/LogLine.h>
 #include <llamalog/llamalog.h>
 #include <m3c/Handle.h>
 #include <m3c/exception.h>
@@ -30,8 +31,8 @@ limitations under the License.
 #include <strsafe.h>
 #include <windows.h>
 
-#include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cwchar>
 #include <exception>
@@ -146,6 +147,18 @@ std::weak_ordering Filename::operator<=>(const Filename& filename) const {
 	return CompareFilenames(m_filename, filename.m_filename);
 }
 
+std::weak_ordering Filename::operator<=>(const wchar_t* filename) const {
+	return *this <=> std::wstring_view(filename);
+}
+
+std::weak_ordering Filename::operator<=>(const std::wstring& filename) const {
+	return CompareFilenames(m_filename.c_str(), m_filename.size(), filename.c_str(), filename.size());
+}
+
+std::weak_ordering Filename::operator<=>(const std::wstring_view& filename) const {
+	return CompareFilenames(m_filename.c_str(), m_filename.size(), filename.data(), filename.size());
+}
+
 bool Filename::IsSameStringAs(const Filename& filename) const noexcept {
 	return sv() == filename.sv();
 }
@@ -170,7 +183,7 @@ Path::Path(const std::wstring& path)
 
 Path::Path(const std::wstring_view& path)
 	// std::basic_string_view is not required to be null-terminated
-	: Path(m3c::lazy_wstring<128>(path).c_str(), path.size()) {
+	: Path(string_type(path).c_str(), path.size()) {
 	// empty
 }
 
@@ -245,6 +258,10 @@ Path::Path(const Path& path, const wchar_t* sub, std::size_t subSize) {
 
 std::weak_ordering Path::operator<=>(const Path& path) const {
 	return CompareFilenames(m_path.c_str(), m_path.size(), path.c_str(), path.size());
+}
+
+std::weak_ordering Path::operator<=>(const wchar_t* path) const {
+	return *this <=> std::wstring_view(path);
 }
 
 std::weak_ordering Path::operator<=>(const std::wstring& path) const {
@@ -525,7 +542,7 @@ llamalog::LogLine& operator<<(llamalog::LogLine& logLine, const Path& path) {
 
 namespace internal {
 
-fmt::format_parse_context::iterator filesystem_base_formatter::parse(const fmt::format_parse_context& ctx) {  // NOLINT(readability-identifier-naming, readability-convert-member-functions-to-static): MUST use name as in fmt::formatter.
+fmt::format_parse_context::iterator FilesystemBaseFormatter::parse(const fmt::format_parse_context& ctx) {  // NOLINT(readability-identifier-naming, readability-convert-member-functions-to-static): MUST use name as in fmt::formatter.
 	auto it = ctx.begin();
 	const auto last = ctx.end();
 	if (it != last && *it == ':') {
@@ -543,7 +560,7 @@ fmt::format_parse_context::iterator filesystem_base_formatter::parse(const fmt::
 	return end;
 }
 
-fmt::format_context::iterator filesystem_base_formatter::Format(const wchar_t* const str, const std::size_t len, fmt::format_context& ctx) const {
+fmt::format_context::iterator FilesystemBaseFormatter::Format(const wchar_t* const str, const std::size_t len, fmt::format_context& ctx) const {
 	const std::string value = m3c::EncodeUtf8(str, len);
 	return fmt::format_to(ctx.out(), m_format, value);
 }

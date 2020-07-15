@@ -18,12 +18,39 @@ limitations under the License.
 
 #include "TestUtils.h"
 
+#include <llamalog/llamalog.h>
 #include <m3c/Handle.h>
-#include <m3c/exception.h>
+
+#include <fmt/core.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include <detours_gmock.h>
 #include <pathcch.h>
+#include <windows.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <ostream>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
+namespace m3c {
+class com_exception;
+}
+namespace m3c {
+class windows_exception;
+}
+
+#ifdef __clang_analyzer__
+// Avoid collisions with Windows API defines
+#undef GetSystemDirectory
+#endif
 
 namespace systools::test {
 

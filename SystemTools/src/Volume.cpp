@@ -44,7 +44,8 @@ void StripToVolumeName(Volume::string_type& path) {
 		THROW(m3c::windows_exception(GetLastError()), "GetVolumePathName {}", path);
 	}
 
-	wchar_t volumeName[50];
+	constexpr std::size_t kVolumeNameBufferSize = 50;
+	wchar_t volumeName[kVolumeNameBufferSize];
 	if (!GetVolumeNameForVolumeMountPointW(volumePath, volumeName, sizeof(volumeName) / sizeof(volumeName[0]))) {
 		THROW(m3c::windows_exception(GetLastError()), "GetVolumeNameForVolumeMountPoint {}", volumePath);
 	}
@@ -84,9 +85,9 @@ void Volume::ReadUnbufferedAlignments() {
 		THROW(m3c::windows_exception(GetLastError()), "CreateFile {}", m_name);
 	}
 
-	VOLUME_DISK_EXTENTS volumeDiskExtents;
-	DWORD bytesReturned;
-	std::unique_ptr<std::byte[]> buffer;
+	VOLUME_DISK_EXTENTS volumeDiskExtents;  //NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
+	DWORD bytesReturned;                    //NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
+	std::unique_ptr<std::byte[]> buffer;    //NOLINT(cppcoreguidelines-init-variables): Life time of buffer must match pVolumeDiskExtents.
 	const VOLUME_DISK_EXTENTS* pVolumeDiskExtents = &volumeDiskExtents;
 
 	if (!DeviceIoControl(hVolume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, nullptr, 0, &volumeDiskExtents, sizeof(volumeDiskExtents), &bytesReturned, nullptr)) {
