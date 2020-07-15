@@ -16,6 +16,7 @@ limitations under the License.
 
 #pragma once
 
+#include "TestUtils.h"  // IWYU pragma: keep
 #include "systools/DirectoryScanner.h"
 #include "systools/Path.h"
 

@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "BackupFileSystem_Fake.h"
 #include "BackupStrategy_Mock.h"
+#include "TestUtils.h"  // IWYU pragma: keep
 #include "systools/Backup.h"
 #include "systools/BackupStrategy.h"
 #include "systools/DirectoryScanner.h"

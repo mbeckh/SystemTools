@@ -23,6 +23,7 @@ limitations under the License.
 #include <llamalog/llamalog.h>
 #include <m3c/Handle.h>
 #include <m3c/exception.h>
+#include <m4t/m4t.h>  // IWYU pragma: keep
 
 #include <fmt/core.h>
 #include <gmock/gmock.h>
