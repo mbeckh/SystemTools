@@ -223,7 +223,7 @@ Backup::Statistics Backup::CreateBackup(const std::vector<Path>& src, const Path
 	}
 
 	// TODO: root folder
-	// TODO: ref and dst must be on same value
+	// TODO: ref and dst must be on same volume
 
 	// group source folders by path
 	std::unordered_map<Path, std::unordered_set<Filename>> srcPaths;
