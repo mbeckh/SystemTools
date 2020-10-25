@@ -398,7 +398,7 @@ Path Path::GetParent() const {
 
 Filename Path::GetFilename() const {
 	wchar_t* pFilename;  // NOLINT(cppcoreguidelines-init-variables): Initialized as out parameter.
-	DWORD len;           // NOLINT(cppcoreguidelines-init-variables): Initialized in the followin block.
+	DWORD len;           // NOLINT(cppcoreguidelines-init-variables): Initialized in the following block.
 	if (m_path.size() < MAX_PATH) {
 		wchar_t buffer[MAX_PATH];
 		len = GetFullPathNameW(m_path.c_str(), MAX_PATH, buffer, &pFilename);
